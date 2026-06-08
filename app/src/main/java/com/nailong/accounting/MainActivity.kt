@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.BudgetStatus
+import com.nailong.accounting.domain.model.CategoryBudgetUsage
 import com.nailong.accounting.domain.model.Category
 import com.nailong.accounting.domain.model.Transaction
 import com.nailong.accounting.domain.model.TransactionType
@@ -102,6 +103,12 @@ private fun NailongApp(viewModel: AccountingViewModel) {
                         state = state,
                         onBudgetAmountChange = viewModel::updateBudgetAmount,
                         onSaveBudget = viewModel::saveMonthlyBudget,
+                        onPreviousMonth = { viewModel.movePeriod(-1) },
+                        onNextMonth = { viewModel.movePeriod(1) },
+                        onCurrentMonth = viewModel::goToCurrentPeriod,
+                        onCategoryBudgetAmountChange = viewModel::updateCategoryBudgetAmount,
+                        onBudgetCategorySelected = viewModel::selectBudgetCategory,
+                        onSaveCategoryBudget = viewModel::saveCategoryBudget,
                     )
                 }
                 item {
@@ -180,16 +187,16 @@ private fun MonthlySummaryCard(
     state: AccountingUiState,
     onBudgetAmountChange: (String) -> Unit,
     onSaveBudget: () -> Unit,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
+    onCategoryBudgetAmountChange: (String) -> Unit,
+    onBudgetCategorySelected: (String?) -> Unit,
+    onSaveCategoryBudget: () -> Unit,
 ) {
     val summary = state.monthlySummary
     val budgetUsage = state.budgetUsage
     val progress = ((budgetUsage.usageRate ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
-    val statusText = when (budgetUsage.status) {
-        BudgetStatus.NotSet -> "还没有设置本月预算"
-        BudgetStatus.Normal -> "预算状态正常"
-        BudgetStatus.Warning -> "接近预算提醒线"
-        BudgetStatus.Exceeded -> "本月预算已超支"
-    }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -200,11 +207,28 @@ private fun MonthlySummaryCard(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "${state.currentPeriod} 本月概览",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = "${state.currentPeriod} 月度概览",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                OutlinedButton(onClick = onPreviousMonth) {
+                    Text("上月")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(onClick = onCurrentMonth) {
+                    Text("本月")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(onClick = onNextMonth) {
+                    Text("下月")
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -226,7 +250,7 @@ private fun MonthlySummaryCard(
                 )
             }
             Text(
-                text = statusText,
+                text = budgetStatusText(budgetUsage.status),
                 fontWeight = FontWeight.Bold,
             )
             LinearProgressIndicator(
@@ -255,7 +279,91 @@ private fun MonthlySummaryCard(
                     Text("保存预算")
                 }
             }
+            CategoryBudgetSection(
+                state = state,
+                onCategoryBudgetAmountChange = onCategoryBudgetAmountChange,
+                onBudgetCategorySelected = onBudgetCategorySelected,
+                onSaveCategoryBudget = onSaveCategoryBudget,
+            )
         }
+    }
+}
+
+@Composable
+private fun CategoryBudgetSection(
+    state: AccountingUiState,
+    onCategoryBudgetAmountChange: (String) -> Unit,
+    onBudgetCategorySelected: (String?) -> Unit,
+    onSaveCategoryBudget: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "分类预算",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        CategoryDropdown(
+            categories = state.expenseCategories,
+            selectedCategoryId = state.selectedBudgetCategoryId,
+            onSelected = onBudgetCategorySelected,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                modifier = Modifier.weight(1f),
+                value = state.categoryBudgetAmountText,
+                onValueChange = onCategoryBudgetAmountChange,
+                label = { Text("分类预算金额") },
+                singleLine = true,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(onClick = onSaveCategoryBudget) {
+                Text("保存分类预算")
+            }
+        }
+        if (state.categoryBudgetUsages.isEmpty()) {
+            Text(
+                text = "还没有分类预算，可以先给餐饮、交通等高频分类设置预算。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            state.categoryBudgetUsages.forEach { usage ->
+                CategoryBudgetRow(usage)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryBudgetRow(usage: CategoryBudgetUsage) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = usage.categoryName,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = budgetStatusText(usage.status),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        LinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth(),
+            progress = { (usage.usageRate / 100.0).toFloat().coerceIn(0f, 1f) },
+        )
+        Text(
+            text = "预算：${formatCents(usage.budgetAmountInCents)} · " +
+                "已用：${formatCents(usage.usedAmountInCents)} · " +
+                "剩余：${formatCents(usage.remainingAmountInCents)}",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 13.sp,
+        )
     }
 }
 
@@ -556,3 +664,11 @@ private fun formatCents(cents: Long): String =
 
 private fun formatDate(timestamp: Long): String =
     SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(timestamp))
+
+private fun budgetStatusText(status: BudgetStatus): String =
+    when (status) {
+        BudgetStatus.NotSet -> "未设置"
+        BudgetStatus.Normal -> "正常"
+        BudgetStatus.Warning -> "接近超支"
+        BudgetStatus.Exceeded -> "已超支"
+    }

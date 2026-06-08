@@ -60,6 +60,25 @@ data class BudgetUsage(
     val status: BudgetStatus,
 )
 
+data class Budget(
+    val id: String,
+    val ledgerId: String,
+    val categoryId: String?,
+    val period: String,
+    val amountInCents: Long,
+    val alertThreshold: Int,
+)
+
+data class CategoryBudgetUsage(
+    val categoryId: String,
+    val categoryName: String,
+    val budgetAmountInCents: Long,
+    val usedAmountInCents: Long,
+    val remainingAmountInCents: Long,
+    val usageRate: Double,
+    val status: BudgetStatus,
+)
+
 enum class BudgetStatus {
     NotSet,
     Normal,

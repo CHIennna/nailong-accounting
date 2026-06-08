@@ -12,6 +12,7 @@ import com.nailong.accounting.data.repository.DefaultTransactionRepository
 import com.nailong.accounting.domain.usecase.AddTransactionUseCase
 import com.nailong.accounting.domain.usecase.DeleteTransactionUseCase
 import com.nailong.accounting.domain.usecase.InitializeDefaultDataUseCase
+import com.nailong.accounting.domain.usecase.SetCategoryBudgetUseCase
 import com.nailong.accounting.domain.usecase.SetMonthlyBudgetUseCase
 import com.nailong.accounting.domain.usecase.UpdateTransactionUseCase
 
@@ -51,5 +52,6 @@ class AppContainer(context: Context) {
             updateTransactionUseCase = UpdateTransactionUseCase(transactionRepository),
             deleteTransactionUseCase = DeleteTransactionUseCase(transactionRepository),
             setMonthlyBudgetUseCase = SetMonthlyBudgetUseCase(budgetRepository),
+            setCategoryBudgetUseCase = SetCategoryBudgetUseCase(budgetRepository),
         )
 }

@@ -2,9 +2,11 @@ package com.nailong.accounting.data.repository
 
 import com.nailong.accounting.data.local.entity.LedgerEntity
 import com.nailong.accounting.data.local.entity.AccountEntity
+import com.nailong.accounting.data.local.entity.BudgetEntity
 import com.nailong.accounting.data.local.entity.CategoryEntity
 import com.nailong.accounting.data.local.entity.TransactionEntity
 import com.nailong.accounting.domain.model.Account
+import com.nailong.accounting.domain.model.Budget
 import com.nailong.accounting.domain.model.Category
 import com.nailong.accounting.domain.model.Ledger
 import com.nailong.accounting.domain.model.Transaction
@@ -52,4 +54,14 @@ fun TransactionEntity.toDomain(): Transaction =
         targetAccountId = targetAccountId,
         date = date,
         note = note,
+    )
+
+fun BudgetEntity.toDomain(): Budget =
+    Budget(
+        id = id,
+        ledgerId = ledgerId,
+        categoryId = categoryId,
+        period = period,
+        amountInCents = amount,
+        alertThreshold = alertThreshold,
     )

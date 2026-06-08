@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.BudgetUsage
+import com.nailong.accounting.domain.model.CategoryBudgetUsage
 import com.nailong.accounting.domain.model.Category
 import com.nailong.accounting.domain.model.Ledger
 import com.nailong.accounting.domain.model.MonthlySummary
@@ -20,6 +21,7 @@ import com.nailong.accounting.domain.repository.TransactionRepository
 import com.nailong.accounting.domain.usecase.AddTransactionUseCase
 import com.nailong.accounting.domain.usecase.DeleteTransactionUseCase
 import com.nailong.accounting.domain.usecase.InitializeDefaultDataUseCase
+import com.nailong.accounting.domain.usecase.SetCategoryBudgetUseCase
 import com.nailong.accounting.domain.usecase.SetMonthlyBudgetUseCase
 import com.nailong.accounting.domain.usecase.UpdateTransactionUseCase
 import java.text.SimpleDateFormat
@@ -52,8 +54,13 @@ data class AccountingUiState(
         status = BudgetStatus.NotSet,
     ),
     val budgetAmountText: String = "",
+    val expenseCategories: List<Category> = emptyList(),
+    val selectedBudgetCategoryId: String? = null,
+    val categoryBudgetAmountText: String = "",
+    val categoryBudgetUsages: List<CategoryBudgetUsage> = emptyList(),
     val categories: List<Category> = emptyList(),
     val accounts: List<Account> = emptyList(),
+    val monthlyTransactions: List<Transaction> = emptyList(),
     val recentTransactions: List<Transaction> = emptyList(),
     val selectedType: TransactionType = TransactionType.Expense,
     val amountText: String = "",
@@ -76,6 +83,7 @@ class AccountingViewModel(
     private val updateTransactionUseCase: UpdateTransactionUseCase,
     private val deleteTransactionUseCase: DeleteTransactionUseCase,
     private val setMonthlyBudgetUseCase: SetMonthlyBudgetUseCase,
+    private val setCategoryBudgetUseCase: SetCategoryBudgetUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountingUiState())
     val uiState: StateFlow<AccountingUiState> = _uiState.asStateFlow()
@@ -84,6 +92,7 @@ class AccountingViewModel(
     private var categoryJob: Job? = null
     private var monthlyJob: Job? = null
     private var budgetJob: Job? = null
+    private var expenseCategoryJob: Job? = null
 
     init {
         bootstrap()
@@ -113,6 +122,43 @@ class AccountingViewModel(
     fun updateBudgetAmount(value: String) {
         val sanitized = value.filter { it.isDigit() || it == '.' }
         _uiState.update { it.copy(budgetAmountText = sanitized, message = null) }
+    }
+
+    fun updateCategoryBudgetAmount(value: String) {
+        val sanitized = value.filter { it.isDigit() || it == '.' }
+        _uiState.update { it.copy(categoryBudgetAmountText = sanitized, message = null) }
+    }
+
+    fun selectBudgetCategory(categoryId: String?) {
+        _uiState.update { it.copy(selectedBudgetCategoryId = categoryId, message = null) }
+    }
+
+    fun movePeriod(monthDelta: Int) {
+        val currentLedger = _uiState.value.currentLedger
+        _uiState.update {
+            it.copy(
+                currentPeriod = shiftPeriod(it.currentPeriod, monthDelta),
+                monthlySummary = null,
+                budgetUsage = emptyBudgetUsage(),
+                categoryBudgetUsages = emptyList(),
+                message = null,
+            )
+        }
+        currentLedger?.let { observeMonthlyTransactions(it.id) }
+    }
+
+    fun goToCurrentPeriod() {
+        val currentLedger = _uiState.value.currentLedger
+        _uiState.update {
+            it.copy(
+                currentPeriod = defaultCurrentPeriodText(),
+                monthlySummary = null,
+                budgetUsage = emptyBudgetUsage(),
+                categoryBudgetUsages = emptyList(),
+                message = null,
+            )
+        }
+        currentLedger?.let { observeMonthlyTransactions(it.id) }
     }
 
     fun selectCategory(categoryId: String?) {
@@ -206,6 +252,33 @@ class AccountingViewModel(
         }
     }
 
+    fun saveCategoryBudget() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val ledger = state.currentLedger
+            val categoryId = state.selectedBudgetCategoryId
+            if (ledger == null) {
+                showMessage("账本未就绪")
+                return@launch
+            }
+            if (categoryId == null) {
+                showMessage("请选择分类")
+                return@launch
+            }
+            val amount = parseAmountInCents(state.categoryBudgetAmountText)
+            if (amount == null) {
+                showMessage("请输入有效分类预算金额")
+                return@launch
+            }
+
+            runCatching { setCategoryBudgetUseCase(ledger.id, state.currentPeriod, categoryId, amount) }
+                .onSuccess {
+                    _uiState.update { it.copy(categoryBudgetAmountText = "", message = "分类预算已保存") }
+                }
+                .onFailure { showMessage(it.message ?: "分类预算保存失败") }
+        }
+    }
+
     fun editTransaction(transaction: Transaction) {
         _uiState.update {
             it.copy(
@@ -258,6 +331,7 @@ class AccountingViewModel(
             observeLedgers()
             observeAccounts()
             observeCategories(TransactionType.Expense)
+            observeExpenseCategories()
         }
     }
 
@@ -309,6 +383,31 @@ class AccountingViewModel(
         }
     }
 
+    private fun observeExpenseCategories() {
+        expenseCategoryJob?.cancel()
+        expenseCategoryJob = viewModelScope.launch {
+            categoryRepository.observeCategories(TransactionType.Expense)
+                .catch { showMessage("预算分类加载失败") }
+                .collect { categories ->
+                    val selected = _uiState.value.selectedBudgetCategoryId ?: categories.firstOrNull()?.id
+                    _uiState.update {
+                        it.copy(
+                            expenseCategories = categories,
+                            selectedBudgetCategoryId = selected,
+                        )
+                    }
+                    val ledger = _uiState.value.currentLedger
+                    if (ledger != null && _uiState.value.monthlySummary != null) {
+                        observeBudgetUsages(
+                            ledgerId = ledger.id,
+                            period = _uiState.value.currentPeriod,
+                            transactions = _uiState.value.monthlyTransactions,
+                        )
+                    }
+                }
+        }
+    }
+
     private fun observeRecentTransactions(ledgerId: String) {
         recentJob?.cancel()
         recentJob = viewModelScope.launch {
@@ -344,33 +443,95 @@ class AccountingViewModel(
                         budgetUsageRate = _uiState.value.budgetUsage.usageRate,
                         transactionCount = transactions.size,
                     )
-                    _uiState.update { it.copy(monthlySummary = summary) }
-                    observeBudgetUsage(ledgerId, period, expense)
+                    _uiState.update { it.copy(monthlySummary = summary, monthlyTransactions = transactions) }
+                    observeBudgetUsages(ledgerId, period, transactions)
                 }
         }
     }
 
-    private fun observeBudgetUsage(
+    private fun observeBudgetUsages(
         ledgerId: String,
         period: String,
-        usedAmountInCents: Long,
+        transactions: List<Transaction>,
     ) {
         budgetJob?.cancel()
         budgetJob = viewModelScope.launch {
-            budgetRepository.observeTotalBudgetUsage(ledgerId, period, usedAmountInCents)
+            budgetRepository.observeBudgets(ledgerId, period)
                 .catch { showMessage("预算加载失败") }
-                .collect { usage ->
+                .collect { budgets ->
+                    val expenseTotal = transactions
+                        .filter { it.type == TransactionType.Expense }
+                        .sumOf { it.amountInCents }
+                    val totalBudget = budgets.firstOrNull { it.categoryId == null }
+                    val totalUsage = buildBudgetUsage(
+                        budgetId = totalBudget?.id,
+                        budgetAmount = totalBudget?.amountInCents,
+                        usedAmount = expenseTotal,
+                        alertThreshold = totalBudget?.alertThreshold ?: 80,
+                    )
+                    val categories = _uiState.value.expenseCategories
+                    val categoryUsages = budgets
+                        .filter { it.categoryId != null }
+                        .mapNotNull { budget ->
+                            val category = categories.firstOrNull { it.id == budget.categoryId } ?: return@mapNotNull null
+                            val used = transactions
+                                .filter {
+                                    it.type == TransactionType.Expense &&
+                                        it.categoryId == budget.categoryId
+                                }
+                                .sumOf { it.amountInCents }
+                            val usage = buildBudgetUsage(
+                                budgetId = budget.id,
+                                budgetAmount = budget.amountInCents,
+                                usedAmount = used,
+                                alertThreshold = budget.alertThreshold,
+                            )
+                            CategoryBudgetUsage(
+                                categoryId = category.id,
+                                categoryName = category.name,
+                                budgetAmountInCents = budget.amountInCents,
+                                usedAmountInCents = used,
+                                remainingAmountInCents = usage.remainingAmountInCents ?: 0,
+                                usageRate = usage.usageRate ?: 0.0,
+                                status = usage.status,
+                            )
+                        }
                     _uiState.update { state ->
                         state.copy(
-                            budgetUsage = usage,
+                            budgetUsage = totalUsage,
+                            categoryBudgetUsages = categoryUsages,
                             monthlySummary = state.monthlySummary?.copy(
-                                budgetInCents = usage.budgetAmountInCents,
-                                budgetUsageRate = usage.usageRate,
+                                budgetInCents = totalUsage.budgetAmountInCents,
+                                budgetUsageRate = totalUsage.usageRate,
                             ),
                         )
                     }
                 }
         }
+    }
+
+    private fun buildBudgetUsage(
+        budgetId: String?,
+        budgetAmount: Long?,
+        usedAmount: Long,
+        alertThreshold: Int,
+    ): BudgetUsage {
+        val remaining = budgetAmount?.minus(usedAmount)
+        val rate = budgetAmount?.takeIf { it > 0 }?.let { usedAmount.toDouble() / it.toDouble() * 100 }
+        val status = when {
+            budgetAmount == null -> BudgetStatus.NotSet
+            usedAmount >= budgetAmount -> BudgetStatus.Exceeded
+            rate != null && rate >= alertThreshold -> BudgetStatus.Warning
+            else -> BudgetStatus.Normal
+        }
+        return BudgetUsage(
+            budgetId = budgetId,
+            budgetAmountInCents = budgetAmount,
+            usedAmountInCents = usedAmount,
+            remainingAmountInCents = remaining,
+            usageRate = rate,
+            status = status,
+        )
     }
 
     private fun parseAmountInCents(text: String): Long? {
@@ -401,6 +562,7 @@ class AccountingViewModel(
         private val updateTransactionUseCase: UpdateTransactionUseCase,
         private val deleteTransactionUseCase: DeleteTransactionUseCase,
         private val setMonthlyBudgetUseCase: SetMonthlyBudgetUseCase,
+        private val setCategoryBudgetUseCase: SetCategoryBudgetUseCase,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -415,11 +577,22 @@ class AccountingViewModel(
                 updateTransactionUseCase = updateTransactionUseCase,
                 deleteTransactionUseCase = deleteTransactionUseCase,
                 setMonthlyBudgetUseCase = setMonthlyBudgetUseCase,
+                setCategoryBudgetUseCase = setCategoryBudgetUseCase,
             ) as T
     }
 
     companion object {
         private const val RECENT_LIMIT = 20
+
+        private fun emptyBudgetUsage(): BudgetUsage =
+            BudgetUsage(
+                budgetId = null,
+                budgetAmountInCents = null,
+                usedAmountInCents = 0,
+                remainingAmountInCents = null,
+                usageRate = null,
+                status = BudgetStatus.NotSet,
+            )
 
         private fun monthRange(period: String): LongRange {
             val parts = period.split("-")
@@ -435,6 +608,20 @@ class AccountingViewModel(
             end.add(Calendar.MONTH, 1)
             end.add(Calendar.MILLISECOND, -1)
             return start.timeInMillis..end.timeInMillis
+        }
+
+        private fun shiftPeriod(period: String, monthDelta: Int): String {
+            val parts = period.split("-")
+            val year = parts.getOrNull(0)?.toIntOrNull() ?: Calendar.getInstance().get(Calendar.YEAR)
+            val month = parts.getOrNull(1)?.toIntOrNull() ?: (Calendar.getInstance().get(Calendar.MONTH) + 1)
+            val calendar = Calendar.getInstance().apply {
+                clear()
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month - 1)
+                set(Calendar.DAY_OF_MONTH, 1)
+                add(Calendar.MONTH, monthDelta)
+            }
+            return SimpleDateFormat("yyyy-MM", Locale.CHINA).format(calendar.time)
         }
     }
 }

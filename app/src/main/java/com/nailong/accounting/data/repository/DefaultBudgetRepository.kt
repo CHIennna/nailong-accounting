@@ -2,6 +2,7 @@ package com.nailong.accounting.data.repository
 
 import com.nailong.accounting.data.local.dao.BudgetDao
 import com.nailong.accounting.data.local.entity.BudgetEntity
+import com.nailong.accounting.domain.model.Budget
 import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.BudgetUsage
 import com.nailong.accounting.domain.repository.BudgetRepository
@@ -31,6 +32,35 @@ class DefaultBudgetRepository(
             ),
         )
     }
+
+    override suspend fun setCategoryBudget(
+        ledgerId: String,
+        period: String,
+        categoryId: String,
+        amountInCents: Long,
+    ) {
+        require(categoryId.isNotBlank()) { "请选择分类" }
+        require(amountInCents > 0) { "请输入有效预算金额" }
+        val now = System.currentTimeMillis()
+        val existing = budgetDao.getCategoryBudget(ledgerId, period, categoryId)
+        budgetDao.insertOrUpdate(
+            BudgetEntity(
+                id = existing?.id ?: UUID.randomUUID().toString(),
+                ledgerId = ledgerId,
+                categoryId = categoryId,
+                period = period,
+                amount = amountInCents,
+                alertEnabled = true,
+                alertThreshold = existing?.alertThreshold ?: 80,
+                createdAt = existing?.createdAt ?: now,
+                updatedAt = now,
+                deletedAt = null,
+            ),
+        )
+    }
+
+    override fun observeBudgets(ledgerId: String, period: String): Flow<List<Budget>> =
+        budgetDao.observeByMonth(ledgerId, period).map { budgets -> budgets.map { it.toDomain() } }
 
     override fun observeTotalBudgetUsage(
         ledgerId: String,
