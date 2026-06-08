@@ -129,4 +129,46 @@ Android：Kotlin + Jetpack Compose
 AI：DeepSeek API
 ```
 
-下一步进入编码阶段，建议从 Milestone 1：项目骨架与本地数据开始。
+当前已进入编码阶段，Milestone 1 正在推进：
+
+- Android 工程骨架已创建。
+- FastAPI 后端工程骨架已创建。
+- Room Entity / DAO / Database 基础结构已创建。
+- 默认账本、默认分类、默认账户初始化逻辑已创建。
+
+## 本地开发
+
+### Android 构建
+
+本项目使用 Gradle 构建 Android App。
+
+```powershell
+gradle :app:assembleDebug
+```
+
+如果本机没有全局安装 JDK、Gradle 或 Android SDK，可以使用本地工具链。当前开发环境中便携工具安装在 `work/tools/`，该目录不会提交到 Git。
+
+### 后端启动
+
+后端位于 `backend/`。
+
+```powershell
+cd backend
+python -m venv ..\work\backend-venv
+..\work\backend-venv\Scripts\python.exe -m pip install -r requirements.txt
+..\work\backend-venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+后端环境变量参考：
+
+```text
+backend/.env.example
+```
+
+正式调用 DeepSeek 前，需要在 `.env` 中配置：
+
+```text
+DEEPSEEK_API_KEY
+DEEPSEEK_BASE_URL
+DEEPSEEK_MODEL
+```

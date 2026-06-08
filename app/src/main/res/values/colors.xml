@@ -1,0 +1,6 @@
+<resources>
+    <color name="brand_yellow">#F7C948</color>
+    <color name="income_green">#2EAD6B</color>
+    <color name="expense_red">#E85D5D</color>
+    <color name="analysis_blue">#4A90E2</color>
+</resources>
