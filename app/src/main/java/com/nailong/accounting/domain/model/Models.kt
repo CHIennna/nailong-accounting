@@ -51,6 +51,22 @@ data class MonthlySummary(
     val transactionCount: Int,
 )
 
+data class BudgetUsage(
+    val budgetId: String?,
+    val budgetAmountInCents: Long?,
+    val usedAmountInCents: Long,
+    val remainingAmountInCents: Long?,
+    val usageRate: Double?,
+    val status: BudgetStatus,
+)
+
+enum class BudgetStatus {
+    NotSet,
+    Normal,
+    Warning,
+    Exceeded,
+}
+
 enum class TransactionType(val value: String) {
     Expense("expense"),
     Income("income"),

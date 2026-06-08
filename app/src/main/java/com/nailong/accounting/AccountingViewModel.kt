@@ -4,11 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.nailong.accounting.domain.model.Account
+import com.nailong.accounting.domain.model.BudgetStatus
+import com.nailong.accounting.domain.model.BudgetUsage
 import com.nailong.accounting.domain.model.Category
 import com.nailong.accounting.domain.model.Ledger
+import com.nailong.accounting.domain.model.MonthlySummary
 import com.nailong.accounting.domain.model.Transaction
 import com.nailong.accounting.domain.model.TransactionType
 import com.nailong.accounting.domain.repository.AccountRepository
+import com.nailong.accounting.domain.repository.BudgetRepository
 import com.nailong.accounting.domain.repository.CategoryRepository
 import com.nailong.accounting.domain.repository.LedgerRepository
 import com.nailong.accounting.domain.repository.TransactionInput
@@ -16,7 +20,11 @@ import com.nailong.accounting.domain.repository.TransactionRepository
 import com.nailong.accounting.domain.usecase.AddTransactionUseCase
 import com.nailong.accounting.domain.usecase.DeleteTransactionUseCase
 import com.nailong.accounting.domain.usecase.InitializeDefaultDataUseCase
+import com.nailong.accounting.domain.usecase.SetMonthlyBudgetUseCase
 import com.nailong.accounting.domain.usecase.UpdateTransactionUseCase
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,10 +34,24 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
+private fun defaultCurrentPeriodText(): String =
+    SimpleDateFormat("yyyy-MM", Locale.CHINA).format(Calendar.getInstance().time)
+
 data class AccountingUiState(
     val isLoading: Boolean = true,
     val ledgers: List<Ledger> = emptyList(),
     val currentLedger: Ledger? = null,
+    val currentPeriod: String = defaultCurrentPeriodText(),
+    val monthlySummary: MonthlySummary? = null,
+    val budgetUsage: BudgetUsage = BudgetUsage(
+        budgetId = null,
+        budgetAmountInCents = null,
+        usedAmountInCents = 0,
+        remainingAmountInCents = null,
+        usageRate = null,
+        status = BudgetStatus.NotSet,
+    ),
+    val budgetAmountText: String = "",
     val categories: List<Category> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val recentTransactions: List<Transaction> = emptyList(),
@@ -47,17 +69,21 @@ class AccountingViewModel(
     private val ledgerRepository: LedgerRepository,
     private val categoryRepository: CategoryRepository,
     private val accountRepository: AccountRepository,
+    private val budgetRepository: BudgetRepository,
     private val transactionRepository: TransactionRepository,
     private val initializeDefaultDataUseCase: InitializeDefaultDataUseCase,
     private val addTransactionUseCase: AddTransactionUseCase,
     private val updateTransactionUseCase: UpdateTransactionUseCase,
     private val deleteTransactionUseCase: DeleteTransactionUseCase,
+    private val setMonthlyBudgetUseCase: SetMonthlyBudgetUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountingUiState())
     val uiState: StateFlow<AccountingUiState> = _uiState.asStateFlow()
 
     private var recentJob: Job? = null
     private var categoryJob: Job? = null
+    private var monthlyJob: Job? = null
+    private var budgetJob: Job? = null
 
     init {
         bootstrap()
@@ -82,6 +108,11 @@ class AccountingViewModel(
 
     fun updateNote(value: String) {
         _uiState.update { it.copy(noteText = value, message = null) }
+    }
+
+    fun updateBudgetAmount(value: String) {
+        val sanitized = value.filter { it.isDigit() || it == '.' }
+        _uiState.update { it.copy(budgetAmountText = sanitized, message = null) }
     }
 
     fun selectCategory(categoryId: String?) {
@@ -153,6 +184,28 @@ class AccountingViewModel(
         }
     }
 
+    fun saveMonthlyBudget() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val ledger = state.currentLedger
+            if (ledger == null) {
+                showMessage("账本未就绪")
+                return@launch
+            }
+            val amount = parseAmountInCents(state.budgetAmountText)
+            if (amount == null) {
+                showMessage("请输入有效预算金额")
+                return@launch
+            }
+
+            runCatching { setMonthlyBudgetUseCase(ledger.id, state.currentPeriod, amount) }
+                .onSuccess {
+                    _uiState.update { it.copy(budgetAmountText = "", message = "预算已保存") }
+                }
+                .onFailure { showMessage(it.message ?: "预算保存失败") }
+        }
+    }
+
     fun editTransaction(transaction: Transaction) {
         _uiState.update {
             it.copy(
@@ -221,7 +274,10 @@ class AccountingViewModel(
                             currentLedger = current,
                         )
                     }
-                    current?.let { observeRecentTransactions(it.id) }
+                    current?.let {
+                        observeRecentTransactions(it.id)
+                        observeMonthlyTransactions(it.id)
+                    }
                 }
         }
     }
@@ -264,6 +320,59 @@ class AccountingViewModel(
         }
     }
 
+    private fun observeMonthlyTransactions(ledgerId: String) {
+        monthlyJob?.cancel()
+        val period = _uiState.value.currentPeriod
+        val range = monthRange(period)
+        monthlyJob = viewModelScope.launch {
+            transactionRepository.observeTransactionsByDateRange(ledgerId, range.first, range.last)
+                .catch { showMessage("月度统计加载失败") }
+                .collect { transactions ->
+                    val income = transactions
+                        .filter { it.type == TransactionType.Income }
+                        .sumOf { it.amountInCents }
+                    val expense = transactions
+                        .filter { it.type == TransactionType.Expense }
+                        .sumOf { it.amountInCents }
+                    val summary = MonthlySummary(
+                        ledgerId = ledgerId,
+                        period = period,
+                        incomeInCents = income,
+                        expenseInCents = expense,
+                        balanceInCents = income - expense,
+                        budgetInCents = _uiState.value.budgetUsage.budgetAmountInCents,
+                        budgetUsageRate = _uiState.value.budgetUsage.usageRate,
+                        transactionCount = transactions.size,
+                    )
+                    _uiState.update { it.copy(monthlySummary = summary) }
+                    observeBudgetUsage(ledgerId, period, expense)
+                }
+        }
+    }
+
+    private fun observeBudgetUsage(
+        ledgerId: String,
+        period: String,
+        usedAmountInCents: Long,
+    ) {
+        budgetJob?.cancel()
+        budgetJob = viewModelScope.launch {
+            budgetRepository.observeTotalBudgetUsage(ledgerId, period, usedAmountInCents)
+                .catch { showMessage("预算加载失败") }
+                .collect { usage ->
+                    _uiState.update { state ->
+                        state.copy(
+                            budgetUsage = usage,
+                            monthlySummary = state.monthlySummary?.copy(
+                                budgetInCents = usage.budgetAmountInCents,
+                                budgetUsageRate = usage.usageRate,
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
     private fun parseAmountInCents(text: String): Long? {
         val value = text.toDoubleOrNull() ?: return null
         val cents = (value * 100).roundToLong()
@@ -285,11 +394,13 @@ class AccountingViewModel(
         private val ledgerRepository: LedgerRepository,
         private val categoryRepository: CategoryRepository,
         private val accountRepository: AccountRepository,
+        private val budgetRepository: BudgetRepository,
         private val transactionRepository: TransactionRepository,
         private val initializeDefaultDataUseCase: InitializeDefaultDataUseCase,
         private val addTransactionUseCase: AddTransactionUseCase,
         private val updateTransactionUseCase: UpdateTransactionUseCase,
         private val deleteTransactionUseCase: DeleteTransactionUseCase,
+        private val setMonthlyBudgetUseCase: SetMonthlyBudgetUseCase,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -297,15 +408,33 @@ class AccountingViewModel(
                 ledgerRepository = ledgerRepository,
                 categoryRepository = categoryRepository,
                 accountRepository = accountRepository,
+                budgetRepository = budgetRepository,
                 transactionRepository = transactionRepository,
                 initializeDefaultDataUseCase = initializeDefaultDataUseCase,
                 addTransactionUseCase = addTransactionUseCase,
                 updateTransactionUseCase = updateTransactionUseCase,
                 deleteTransactionUseCase = deleteTransactionUseCase,
+                setMonthlyBudgetUseCase = setMonthlyBudgetUseCase,
             ) as T
     }
 
     companion object {
         private const val RECENT_LIMIT = 20
+
+        private fun monthRange(period: String): LongRange {
+            val parts = period.split("-")
+            val year = parts.getOrNull(0)?.toIntOrNull() ?: Calendar.getInstance().get(Calendar.YEAR)
+            val month = parts.getOrNull(1)?.toIntOrNull() ?: (Calendar.getInstance().get(Calendar.MONTH) + 1)
+            val start = Calendar.getInstance().apply {
+                clear()
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month - 1)
+                set(Calendar.DAY_OF_MONTH, 1)
+            }
+            val end = start.clone() as Calendar
+            end.add(Calendar.MONTH, 1)
+            end.add(Calendar.MILLISECOND, -1)
+            return start.timeInMillis..end.timeInMillis
+        }
     }
 }

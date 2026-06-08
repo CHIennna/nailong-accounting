@@ -20,4 +20,9 @@ interface TransactionRepository {
     suspend fun updateTransaction(transactionId: String, input: TransactionInput)
     suspend fun deleteTransaction(transactionId: String)
     fun observeRecentTransactions(ledgerId: String, limit: Int): Flow<List<Transaction>>
+    fun observeTransactionsByDateRange(
+        ledgerId: String,
+        startAt: Long,
+        endAt: Long,
+    ): Flow<List<Transaction>>
 }

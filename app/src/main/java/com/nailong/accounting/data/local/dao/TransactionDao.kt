@@ -38,6 +38,12 @@ interface TransactionDao {
     ): Flow<List<TransactionEntity>>
 
     @Query(
+        "SELECT COUNT(*) FROM transactions " +
+            "WHERE ledgerId = :ledgerId AND date BETWEEN :startAt AND :endAt AND deletedAt IS NULL",
+    )
+    suspend fun countByDateRange(ledgerId: String, startAt: Long, endAt: Long): Int
+
+    @Query(
         "SELECT COALESCE(SUM(amount), 0) FROM transactions " +
             "WHERE ledgerId = :ledgerId AND type = 'expense' " +
             "AND date BETWEEN :startAt AND :endAt AND deletedAt IS NULL",

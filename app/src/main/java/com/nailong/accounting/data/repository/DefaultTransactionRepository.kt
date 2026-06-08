@@ -37,6 +37,14 @@ class DefaultTransactionRepository(
     override fun observeRecentTransactions(ledgerId: String, limit: Int): Flow<List<Transaction>> =
         transactionDao.observeRecent(ledgerId, limit).map { transactions -> transactions.map { it.toDomain() } }
 
+    override fun observeTransactionsByDateRange(
+        ledgerId: String,
+        startAt: Long,
+        endAt: Long,
+    ): Flow<List<Transaction>> =
+        transactionDao.observeByDateRange(ledgerId, startAt, endAt)
+            .map { transactions -> transactions.map { it.toDomain() } }
+
     private fun TransactionInput.toEntity(
         id: String,
         createdAt: Long,

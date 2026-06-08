@@ -21,6 +21,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nailong.accounting.domain.model.Account
+import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.Category
 import com.nailong.accounting.domain.model.Transaction
 import com.nailong.accounting.domain.model.TransactionType
@@ -93,6 +96,13 @@ private fun NailongApp(viewModel: AccountingViewModel) {
             ) {
                 item {
                     HeaderCard(state)
+                }
+                item {
+                    MonthlySummaryCard(
+                        state = state,
+                        onBudgetAmountChange = viewModel::updateBudgetAmount,
+                        onSaveBudget = viewModel::saveMonthlyBudget,
+                    )
                 }
                 item {
                     TransactionForm(
@@ -158,10 +168,115 @@ private fun HeaderCard(state: AccountingUiState) {
             )
             Text(
                 modifier = Modifier.padding(top = 4.dp),
-                text = "Milestone 2：基础记账闭环",
+                text = "Milestone 3：首页统计与预算",
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
+    }
+}
+
+@Composable
+private fun MonthlySummaryCard(
+    state: AccountingUiState,
+    onBudgetAmountChange: (String) -> Unit,
+    onSaveBudget: () -> Unit,
+) {
+    val summary = state.monthlySummary
+    val budgetUsage = state.budgetUsage
+    val progress = ((budgetUsage.usageRate ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+    val statusText = when (budgetUsage.status) {
+        BudgetStatus.NotSet -> "还没有设置本月预算"
+        BudgetStatus.Normal -> "预算状态正常"
+        BudgetStatus.Warning -> "接近预算提醒线"
+        BudgetStatus.Exceeded -> "本月预算已超支"
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "${state.currentPeriod} 本月概览",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SummaryMetric(
+                    label = "支出",
+                    value = formatCents(summary?.expenseInCents ?: 0),
+                    modifier = Modifier.weight(1f),
+                )
+                SummaryMetric(
+                    label = "收入",
+                    value = formatCents(summary?.incomeInCents ?: 0),
+                    modifier = Modifier.weight(1f),
+                )
+                SummaryMetric(
+                    label = "结余",
+                    value = formatCents(summary?.balanceInCents ?: 0),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                text = statusText,
+                fontWeight = FontWeight.Bold,
+            )
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                progress = { progress },
+            )
+            Text(
+                text = "预算：${budgetUsage.budgetAmountInCents?.let(::formatCents) ?: "未设置"} · " +
+                    "已用：${formatCents(budgetUsage.usedAmountInCents)} · " +
+                    "剩余：${budgetUsage.remainingAmountInCents?.let(::formatCents) ?: "--"}",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = state.budgetAmountText,
+                    onValueChange = onBudgetAmountChange,
+                    label = { Text("本月预算") },
+                    singleLine = true,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(onClick = onSaveBudget) {
+                    Text("保存预算")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 13.sp,
+        )
+        Text(
+            modifier = Modifier.padding(top = 4.dp),
+            text = value,
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+        )
     }
 }
 
@@ -289,7 +404,7 @@ private fun CategoryDropdown(
     ) {
         OutlinedTextField(
             modifier = Modifier
-                .menuAnchor()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                 .fillMaxWidth(),
             readOnly = true,
             value = selected?.name ?: "请选择分类",
@@ -331,7 +446,7 @@ private fun AccountDropdown(
     ) {
         OutlinedTextField(
             modifier = Modifier
-                .menuAnchor()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                 .fillMaxWidth(),
             readOnly = true,
             value = selected?.name ?: "请选择账户",
@@ -428,14 +543,16 @@ private fun TransactionRow(
 }
 
 private fun formatAmount(transaction: Transaction): String {
-    val amount = transaction.amountInCents / 100.0
     val prefix = when (transaction.type) {
         TransactionType.Expense -> "-"
         TransactionType.Income -> "+"
         TransactionType.Transfer -> ""
     }
-    return "$prefix¥${"%.2f".format(amount)}"
+    return "$prefix${formatCents(transaction.amountInCents)}"
 }
+
+private fun formatCents(cents: Long): String =
+    "¥${"%.2f".format(cents / 100.0)}"
 
 private fun formatDate(timestamp: Long): String =
     SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(timestamp))
