@@ -1,0 +1,26 @@
+# Local scratch files
+work/
+
+# Android / Gradle
+.gradle/
+build/
+*/build/
+local.properties
+
+# Python backend
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+
+# Logs and packaged artifacts
+*.log
+*.zip
+*.rar
+*.7z
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
