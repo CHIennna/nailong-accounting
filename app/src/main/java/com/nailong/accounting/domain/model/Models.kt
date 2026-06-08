@@ -79,6 +79,19 @@ data class CategoryBudgetUsage(
     val status: BudgetStatus,
 )
 
+data class CategoryExpenseAnalysis(
+    val categoryId: String,
+    val categoryName: String,
+    val amountInCents: Long,
+    val percentage: Double,
+)
+
+data class DailyExpensePoint(
+    val dayLabel: String,
+    val amountInCents: Long,
+    val percentageOfMax: Double,
+)
+
 enum class BudgetStatus {
     NotSet,
     Normal,

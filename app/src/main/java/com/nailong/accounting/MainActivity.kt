@@ -48,6 +48,8 @@ import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.CategoryBudgetUsage
 import com.nailong.accounting.domain.model.Category
+import com.nailong.accounting.domain.model.CategoryExpenseAnalysis
+import com.nailong.accounting.domain.model.DailyExpensePoint
 import com.nailong.accounting.domain.model.Transaction
 import com.nailong.accounting.domain.model.TransactionType
 import com.nailong.accounting.ui.theme.NailongAccountingTheme
@@ -110,6 +112,9 @@ private fun NailongApp(viewModel: AccountingViewModel) {
                         onBudgetCategorySelected = viewModel::selectBudgetCategory,
                         onSaveCategoryBudget = viewModel::saveCategoryBudget,
                     )
+                }
+                item {
+                    ExpenseAnalysisCard(state)
                 }
                 item {
                     TransactionForm(
@@ -179,6 +184,140 @@ private fun HeaderCard(state: AccountingUiState) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
+    }
+}
+
+@Composable
+private fun ExpenseAnalysisCard(state: AccountingUiState) {
+    val summary = state.monthlySummary
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "消费分析",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            if (summary == null || state.monthlyTransactions.isEmpty()) {
+                Text(
+                    text = "当前月份还没有足够账单，先记录几笔后再看分析。",
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                IncomeExpenseComparison(
+                    incomeInCents = summary.incomeInCents,
+                    expenseInCents = summary.expenseInCents,
+                )
+                CategoryExpenseSection(state.categoryExpenseAnalysis)
+                DailyExpenseTrendSection(state.dailyExpenseTrend)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IncomeExpenseComparison(
+    incomeInCents: Long,
+    expenseInCents: Long,
+) {
+    val maxAmount = maxOf(incomeInCents, expenseInCents).takeIf { it > 0 } ?: 1L
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "收支对比",
+            fontWeight = FontWeight.Bold,
+        )
+        AnalysisBar(
+            label = "收入",
+            value = formatCents(incomeInCents),
+            progress = incomeInCents.toDouble() / maxAmount.toDouble(),
+        )
+        AnalysisBar(
+            label = "支出",
+            value = formatCents(expenseInCents),
+            progress = expenseInCents.toDouble() / maxAmount.toDouble(),
+        )
+    }
+}
+
+@Composable
+private fun CategoryExpenseSection(items: List<CategoryExpenseAnalysis>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "分类占比",
+            fontWeight = FontWeight.Bold,
+        )
+        if (items.isEmpty()) {
+            Text(
+                text = "本月还没有支出分类数据。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            items.take(6).forEach { item ->
+                AnalysisBar(
+                    label = item.categoryName,
+                    value = "${formatCents(item.amountInCents)} · ${"%.1f".format(item.percentage)}%",
+                    progress = item.percentage / 100.0,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyExpenseTrendSection(points: List<DailyExpensePoint>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "每日支出趋势",
+            fontWeight = FontWeight.Bold,
+        )
+        if (points.isEmpty()) {
+            Text(
+                text = "本月还没有支出趋势数据。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            points.takeLast(10).forEach { point ->
+                AnalysisBar(
+                    label = point.dayLabel,
+                    value = formatCents(point.amountInCents),
+                    progress = point.percentageOfMax / 100.0,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalysisBar(
+    label: String,
+    value: String,
+    progress: Double,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = label,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = value,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        LinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth(),
+            progress = { progress.toFloat().coerceIn(0f, 1f) },
+        )
     }
 }
 

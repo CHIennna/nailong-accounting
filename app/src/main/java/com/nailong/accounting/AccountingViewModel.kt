@@ -8,6 +8,8 @@ import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.BudgetUsage
 import com.nailong.accounting.domain.model.CategoryBudgetUsage
 import com.nailong.accounting.domain.model.Category
+import com.nailong.accounting.domain.model.CategoryExpenseAnalysis
+import com.nailong.accounting.domain.model.DailyExpensePoint
 import com.nailong.accounting.domain.model.Ledger
 import com.nailong.accounting.domain.model.MonthlySummary
 import com.nailong.accounting.domain.model.Transaction
@@ -58,6 +60,8 @@ data class AccountingUiState(
     val selectedBudgetCategoryId: String? = null,
     val categoryBudgetAmountText: String = "",
     val categoryBudgetUsages: List<CategoryBudgetUsage> = emptyList(),
+    val categoryExpenseAnalysis: List<CategoryExpenseAnalysis> = emptyList(),
+    val dailyExpenseTrend: List<DailyExpensePoint> = emptyList(),
     val categories: List<Category> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val monthlyTransactions: List<Transaction> = emptyList(),
@@ -141,6 +145,8 @@ class AccountingViewModel(
                 monthlySummary = null,
                 budgetUsage = emptyBudgetUsage(),
                 categoryBudgetUsages = emptyList(),
+                categoryExpenseAnalysis = emptyList(),
+                dailyExpenseTrend = emptyList(),
                 message = null,
             )
         }
@@ -155,6 +161,8 @@ class AccountingViewModel(
                 monthlySummary = null,
                 budgetUsage = emptyBudgetUsage(),
                 categoryBudgetUsages = emptyList(),
+                categoryExpenseAnalysis = emptyList(),
+                dailyExpenseTrend = emptyList(),
                 message = null,
             )
         }
@@ -396,6 +404,7 @@ class AccountingViewModel(
                             selectedBudgetCategoryId = selected,
                         )
                     }
+                    rebuildAnalysis()
                     val ledger = _uiState.value.currentLedger
                     if (ledger != null && _uiState.value.monthlySummary != null) {
                         observeBudgetUsages(
@@ -443,7 +452,16 @@ class AccountingViewModel(
                         budgetUsageRate = _uiState.value.budgetUsage.usageRate,
                         transactionCount = transactions.size,
                     )
-                    _uiState.update { it.copy(monthlySummary = summary, monthlyTransactions = transactions) }
+                    val categoryAnalysis = buildCategoryExpenseAnalysis(transactions, _uiState.value.expenseCategories)
+                    val dailyTrend = buildDailyExpenseTrend(transactions)
+                    _uiState.update {
+                        it.copy(
+                            monthlySummary = summary,
+                            monthlyTransactions = transactions,
+                            categoryExpenseAnalysis = categoryAnalysis,
+                            dailyExpenseTrend = dailyTrend,
+                        )
+                    }
                     observeBudgetUsages(ledgerId, period, transactions)
                 }
         }
@@ -532,6 +550,56 @@ class AccountingViewModel(
             usageRate = rate,
             status = status,
         )
+    }
+
+    private fun rebuildAnalysis() {
+        val state = _uiState.value
+        _uiState.update {
+            it.copy(
+                categoryExpenseAnalysis = buildCategoryExpenseAnalysis(
+                    transactions = state.monthlyTransactions,
+                    categories = state.expenseCategories,
+                ),
+                dailyExpenseTrend = buildDailyExpenseTrend(state.monthlyTransactions),
+            )
+        }
+    }
+
+    private fun buildCategoryExpenseAnalysis(
+        transactions: List<Transaction>,
+        categories: List<Category>,
+    ): List<CategoryExpenseAnalysis> {
+        val expenseTransactions = transactions.filter { it.type == TransactionType.Expense }
+        val total = expenseTransactions.sumOf { it.amountInCents }.takeIf { it > 0 } ?: return emptyList()
+        return expenseTransactions
+            .groupBy { it.categoryId }
+            .mapNotNull { (categoryId, grouped) ->
+                val category = categories.firstOrNull { it.id == categoryId } ?: return@mapNotNull null
+                val amount = grouped.sumOf { it.amountInCents }
+                CategoryExpenseAnalysis(
+                    categoryId = category.id,
+                    categoryName = category.name,
+                    amountInCents = amount,
+                    percentage = amount.toDouble() / total.toDouble() * 100,
+                )
+            }
+            .sortedByDescending { it.amountInCents }
+    }
+
+    private fun buildDailyExpenseTrend(transactions: List<Transaction>): List<DailyExpensePoint> {
+        val dailyAmounts = transactions
+            .filter { it.type == TransactionType.Expense }
+            .groupBy { dayLabel(it.date) }
+            .mapValues { (_, grouped) -> grouped.sumOf { it.amountInCents } }
+            .toSortedMap()
+        val maxAmount = dailyAmounts.values.maxOrNull()?.takeIf { it > 0 } ?: return emptyList()
+        return dailyAmounts.map { (day, amount) ->
+            DailyExpensePoint(
+                dayLabel = day,
+                amountInCents = amount,
+                percentageOfMax = amount.toDouble() / maxAmount.toDouble() * 100,
+            )
+        }
     }
 
     private fun parseAmountInCents(text: String): Long? {
@@ -623,5 +691,8 @@ class AccountingViewModel(
             }
             return SimpleDateFormat("yyyy-MM", Locale.CHINA).format(calendar.time)
         }
+
+        private fun dayLabel(timestamp: Long): String =
+            SimpleDateFormat("MM-dd", Locale.CHINA).format(timestamp)
     }
 }
