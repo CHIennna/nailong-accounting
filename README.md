@@ -163,6 +163,15 @@ Milestone 4 消费分析图表已开始落地：
 - 支持每日支出趋势分析。
 - 当前采用 Compose 轻量进度条展示，暂未引入第三方图表库。
 
+Milestone 5 DeepSeek AI 月报已开始落地：
+
+- Android 端支持生成 AI 月报。
+- 支持读取本地 AI 月报缓存。
+- 支持重新生成 AI 月报。
+- AI 请求通过 FastAPI 后端代理，不在 Android 端保存 DeepSeek API Key。
+- Android 模拟器默认请求 `http://10.0.2.2:8000/api/v1`。
+- 后端默认模型为 `deepseek-v4-flash`，正式使用前仍应以 DeepSeek 官方文档为准。
+
 ## 本地开发
 
 ### Android 构建
@@ -198,4 +207,10 @@ backend/.env.example
 DEEPSEEK_API_KEY
 DEEPSEEK_BASE_URL
 DEEPSEEK_MODEL
+```
+
+Android 模拟器访问本机后端时，默认使用：
+
+```text
+http://10.0.2.2:8000/api/v1
 ```

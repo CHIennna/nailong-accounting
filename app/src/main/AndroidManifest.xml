@@ -8,6 +8,7 @@
         android:icon="@drawable/ic_launcher_foreground"
         android:label="奶龙记账"
         android:roundIcon="@drawable/ic_launcher_foreground"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.NailongAccounting">
         <activity

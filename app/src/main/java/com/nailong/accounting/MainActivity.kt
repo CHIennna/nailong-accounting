@@ -44,6 +44,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nailong.accounting.domain.model.AiAnalysisReport
+import com.nailong.accounting.domain.model.AiReportStatus
 import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.CategoryBudgetUsage
@@ -117,6 +119,13 @@ private fun NailongApp(viewModel: AccountingViewModel) {
                     ExpenseAnalysisCard(state)
                 }
                 item {
+                    AiReportCard(
+                        state = state,
+                        onGenerate = { viewModel.generateAiReport(forceRefresh = false) },
+                        onRegenerate = { viewModel.generateAiReport(forceRefresh = true) },
+                    )
+                }
+                item {
                     TransactionForm(
                         state = state,
                         onTypeSelected = viewModel::selectType,
@@ -184,6 +193,114 @@ private fun HeaderCard(state: AccountingUiState) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
+    }
+}
+
+@Composable
+private fun AiReportCard(
+    state: AccountingUiState,
+    onGenerate: () -> Unit,
+    onRegenerate: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "AI 月报",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            when (state.aiReportStatus) {
+                AiReportStatus.NotGenerated -> {
+                    Text(
+                        text = "根据本月脱敏统计摘要生成消费总结、预算提醒和节省建议。",
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onGenerate,
+                    ) {
+                        Text("生成 AI 月报")
+                    }
+                }
+
+                AiReportStatus.Generating -> {
+                    Text(
+                        text = "AI 正在分析本月消费，请稍候。",
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+
+                AiReportStatus.Generated -> {
+                    val report = state.aiReport
+                    if (report == null) {
+                        Text("暂无 AI 月报")
+                    } else {
+                        AiReportContent(report)
+                    }
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onRegenerate,
+                    ) {
+                        Text("重新生成")
+                    }
+                }
+
+                AiReportStatus.Failed -> {
+                    Text(
+                        text = state.aiErrorMessage ?: "AI 月报生成失败",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onGenerate,
+                    ) {
+                        Text("重试")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiReportContent(report: AiAnalysisReport) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ReportBlock(title = "本月总结", content = report.summary)
+        ReportBlock(title = "主要消费方向", content = report.mainCategories.joinToString("、").ifBlank { "暂无" })
+        ReportBlock(title = "异常提醒", content = report.alerts.joinToString("\n").ifBlank { "暂无明显异常" })
+        ReportBlock(title = "预算执行", content = report.budgetComment)
+        ReportBlock(title = "节省建议", content = report.suggestions.joinToString("\n").ifBlank { "暂无建议" })
+        ReportBlock(title = "奶龙鼓励", content = report.encouragement)
+        Text(
+            text = "模型：${report.model}",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun ReportBlock(
+    title: String,
+    content: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = content,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

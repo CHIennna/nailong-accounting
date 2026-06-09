@@ -3,6 +3,8 @@ package com.nailong.accounting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.nailong.accounting.domain.model.AiAnalysisReport
+import com.nailong.accounting.domain.model.AiReportStatus
 import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.BudgetStatus
 import com.nailong.accounting.domain.model.BudgetUsage
@@ -15,6 +17,8 @@ import com.nailong.accounting.domain.model.MonthlySummary
 import com.nailong.accounting.domain.model.Transaction
 import com.nailong.accounting.domain.model.TransactionType
 import com.nailong.accounting.domain.repository.AccountRepository
+import com.nailong.accounting.domain.repository.AiAnalysisInput
+import com.nailong.accounting.domain.repository.AiCategoryExpenseInput
 import com.nailong.accounting.domain.repository.BudgetRepository
 import com.nailong.accounting.domain.repository.CategoryRepository
 import com.nailong.accounting.domain.repository.LedgerRepository
@@ -22,6 +26,8 @@ import com.nailong.accounting.domain.repository.TransactionInput
 import com.nailong.accounting.domain.repository.TransactionRepository
 import com.nailong.accounting.domain.usecase.AddTransactionUseCase
 import com.nailong.accounting.domain.usecase.DeleteTransactionUseCase
+import com.nailong.accounting.domain.usecase.GenerateAiReportUseCase
+import com.nailong.accounting.domain.usecase.GetCachedAiReportUseCase
 import com.nailong.accounting.domain.usecase.InitializeDefaultDataUseCase
 import com.nailong.accounting.domain.usecase.SetCategoryBudgetUseCase
 import com.nailong.accounting.domain.usecase.SetMonthlyBudgetUseCase
@@ -29,6 +35,7 @@ import com.nailong.accounting.domain.usecase.UpdateTransactionUseCase
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +69,9 @@ data class AccountingUiState(
     val categoryBudgetUsages: List<CategoryBudgetUsage> = emptyList(),
     val categoryExpenseAnalysis: List<CategoryExpenseAnalysis> = emptyList(),
     val dailyExpenseTrend: List<DailyExpensePoint> = emptyList(),
+    val aiReportStatus: AiReportStatus = AiReportStatus.NotGenerated,
+    val aiReport: AiAnalysisReport? = null,
+    val aiErrorMessage: String? = null,
     val categories: List<Category> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val monthlyTransactions: List<Transaction> = emptyList(),
@@ -88,6 +98,8 @@ class AccountingViewModel(
     private val deleteTransactionUseCase: DeleteTransactionUseCase,
     private val setMonthlyBudgetUseCase: SetMonthlyBudgetUseCase,
     private val setCategoryBudgetUseCase: SetCategoryBudgetUseCase,
+    private val getCachedAiReportUseCase: GetCachedAiReportUseCase,
+    private val generateAiReportUseCase: GenerateAiReportUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountingUiState())
     val uiState: StateFlow<AccountingUiState> = _uiState.asStateFlow()
@@ -147,6 +159,9 @@ class AccountingViewModel(
                 categoryBudgetUsages = emptyList(),
                 categoryExpenseAnalysis = emptyList(),
                 dailyExpenseTrend = emptyList(),
+                aiReportStatus = AiReportStatus.NotGenerated,
+                aiReport = null,
+                aiErrorMessage = null,
                 message = null,
             )
         }
@@ -163,10 +178,57 @@ class AccountingViewModel(
                 categoryBudgetUsages = emptyList(),
                 categoryExpenseAnalysis = emptyList(),
                 dailyExpenseTrend = emptyList(),
+                aiReportStatus = AiReportStatus.NotGenerated,
+                aiReport = null,
+                aiErrorMessage = null,
                 message = null,
             )
         }
         currentLedger?.let { observeMonthlyTransactions(it.id) }
+    }
+
+    fun generateAiReport(forceRefresh: Boolean = false) {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val ledger = state.currentLedger
+            val summary = state.monthlySummary
+            if (ledger == null || summary == null) {
+                showMessage("月度统计未就绪")
+                return@launch
+            }
+
+            _uiState.update {
+                it.copy(
+                    aiReportStatus = AiReportStatus.Generating,
+                    aiErrorMessage = null,
+                )
+            }
+
+            runCatching {
+                if (!forceRefresh) {
+                    getCachedAiReportUseCase(ledger.id, state.currentPeriod)?.let { return@runCatching it }
+                }
+                generateAiReportUseCase(buildAiInput(state, ledger.name, ledger.id, summary))
+            }
+                .onSuccess { report ->
+                    _uiState.update {
+                        it.copy(
+                            aiReport = report,
+                            aiReportStatus = AiReportStatus.Generated,
+                            aiErrorMessage = null,
+                            message = "AI 月报已生成",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            aiReportStatus = AiReportStatus.Failed,
+                            aiErrorMessage = error.message ?: "AI 月报生成失败",
+                        )
+                    }
+                }
+        }
     }
 
     fun selectCategory(categoryId: String?) {
@@ -359,6 +421,7 @@ class AccountingViewModel(
                     current?.let {
                         observeRecentTransactions(it.id)
                         observeMonthlyTransactions(it.id)
+                        loadCachedAiReport(it.id, _uiState.value.currentPeriod)
                     }
                 }
         }
@@ -463,6 +526,22 @@ class AccountingViewModel(
                         )
                     }
                     observeBudgetUsages(ledgerId, period, transactions)
+                    loadCachedAiReport(ledgerId, period)
+                }
+        }
+    }
+
+    private fun loadCachedAiReport(ledgerId: String, period: String) {
+        viewModelScope.launch {
+            runCatching { getCachedAiReportUseCase(ledgerId, period) }
+                .onSuccess { report ->
+                    _uiState.update {
+                        it.copy(
+                            aiReport = report,
+                            aiReportStatus = if (report == null) AiReportStatus.NotGenerated else AiReportStatus.Generated,
+                            aiErrorMessage = null,
+                        )
+                    }
                 }
         }
     }
@@ -602,6 +681,39 @@ class AccountingViewModel(
         }
     }
 
+    private fun buildAiInput(
+        state: AccountingUiState,
+        ledgerName: String,
+        ledgerId: String,
+        summary: MonthlySummary,
+    ): AiAnalysisInput {
+        val dayCount = state.dailyExpenseTrend.size.takeIf { it > 0 }
+        val dailyAverage = dayCount?.let { summary.expenseInCents / it }
+        val topCategory = state.categoryExpenseAnalysis.firstOrNull()
+
+        return AiAnalysisInput(
+            requestId = UUID.randomUUID().toString(),
+            ledgerId = ledgerId,
+            ledgerName = ledgerName,
+            period = state.currentPeriod,
+            incomeInCents = summary.incomeInCents,
+            expenseInCents = summary.expenseInCents,
+            balanceInCents = summary.balanceInCents,
+            budgetInCents = state.budgetUsage.budgetAmountInCents,
+            budgetUsageRate = state.budgetUsage.usageRate,
+            transactionCount = summary.transactionCount,
+            categoryExpenses = state.categoryExpenseAnalysis.map {
+                AiCategoryExpenseInput(
+                    categoryName = it.categoryName,
+                    amountInCents = it.amountInCents,
+                    percentage = it.percentage,
+                )
+            },
+            dailyAverageExpenseInCents = dailyAverage,
+            topExpenseCategoryName = topCategory?.categoryName,
+        )
+    }
+
     private fun parseAmountInCents(text: String): Long? {
         val value = text.toDoubleOrNull() ?: return null
         val cents = (value * 100).roundToLong()
@@ -631,6 +743,8 @@ class AccountingViewModel(
         private val deleteTransactionUseCase: DeleteTransactionUseCase,
         private val setMonthlyBudgetUseCase: SetMonthlyBudgetUseCase,
         private val setCategoryBudgetUseCase: SetCategoryBudgetUseCase,
+        private val getCachedAiReportUseCase: GetCachedAiReportUseCase,
+        private val generateAiReportUseCase: GenerateAiReportUseCase,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -646,6 +760,8 @@ class AccountingViewModel(
                 deleteTransactionUseCase = deleteTransactionUseCase,
                 setMonthlyBudgetUseCase = setMonthlyBudgetUseCase,
                 setCategoryBudgetUseCase = setCategoryBudgetUseCase,
+                getCachedAiReportUseCase = getCachedAiReportUseCase,
+                generateAiReportUseCase = generateAiReportUseCase,
             ) as T
     }
 

@@ -3,6 +3,8 @@ package com.nailong.accounting
 import android.content.Context
 import androidx.room.Room
 import com.nailong.accounting.core.database.NailongDatabase
+import com.nailong.accounting.data.remote.AiAnalysisRemoteDataSource
+import com.nailong.accounting.data.repository.DefaultAiAnalysisRepository
 import com.nailong.accounting.data.repository.DefaultAccountRepository
 import com.nailong.accounting.data.repository.DefaultBootstrapRepository
 import com.nailong.accounting.data.repository.DefaultBudgetRepository
@@ -11,6 +13,8 @@ import com.nailong.accounting.data.repository.DefaultLedgerRepository
 import com.nailong.accounting.data.repository.DefaultTransactionRepository
 import com.nailong.accounting.domain.usecase.AddTransactionUseCase
 import com.nailong.accounting.domain.usecase.DeleteTransactionUseCase
+import com.nailong.accounting.domain.usecase.GenerateAiReportUseCase
+import com.nailong.accounting.domain.usecase.GetCachedAiReportUseCase
 import com.nailong.accounting.domain.usecase.InitializeDefaultDataUseCase
 import com.nailong.accounting.domain.usecase.SetCategoryBudgetUseCase
 import com.nailong.accounting.domain.usecase.SetMonthlyBudgetUseCase
@@ -29,6 +33,11 @@ class AppContainer(context: Context) {
     private val accountRepository = DefaultAccountRepository(database.accountDao())
     private val transactionRepository = DefaultTransactionRepository(database.transactionDao())
     private val budgetRepository = DefaultBudgetRepository(database.budgetDao())
+    private val aiAnalysisRepository =
+        DefaultAiAnalysisRepository(
+            reportDao = database.aiAnalysisReportDao(),
+            remoteDataSource = AiAnalysisRemoteDataSource(DEFAULT_API_BASE_URL),
+        )
 
     val initializeDefaultDataUseCase =
         InitializeDefaultDataUseCase(
@@ -53,5 +62,11 @@ class AppContainer(context: Context) {
             deleteTransactionUseCase = DeleteTransactionUseCase(transactionRepository),
             setMonthlyBudgetUseCase = SetMonthlyBudgetUseCase(budgetRepository),
             setCategoryBudgetUseCase = SetCategoryBudgetUseCase(budgetRepository),
+            getCachedAiReportUseCase = GetCachedAiReportUseCase(aiAnalysisRepository),
+            generateAiReportUseCase = GenerateAiReportUseCase(aiAnalysisRepository),
         )
+
+    companion object {
+        private const val DEFAULT_API_BASE_URL = "http://10.0.2.2:8000/api/v1"
+    }
 }
