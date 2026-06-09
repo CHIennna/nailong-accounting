@@ -140,6 +140,14 @@ private fun AppTabContent(
             AppTab.Home -> {
                 item { HeaderCard(state) }
                 item {
+                    LedgerManagementCard(
+                        state = state,
+                        onLedgerNameChange = viewModel::updateLedgerName,
+                        onCreateLedger = viewModel::createLedger,
+                        onSelectLedger = viewModel::selectLedger,
+                    )
+                }
+                item {
                     HomeOverviewCard(
                         state = state,
                         onPreviousMonth = { viewModel.movePeriod(-1) },
@@ -228,6 +236,83 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTransactionsSec
                 onEdit = { viewModel.editTransaction(transaction) },
                 onDelete = { viewModel.deleteTransaction(transaction.id) },
             )
+        }
+    }
+}
+
+@Composable
+private fun LedgerManagementCard(
+    state: AccountingUiState,
+    onLedgerNameChange: (String) -> Unit,
+    onCreateLedger: () -> Unit,
+    onSelectLedger: (String) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "账本",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            if (state.ledgers.isEmpty()) {
+                Text(
+                    text = "暂无账本，创建一个后即可开始记账。",
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                state.ledgers.forEach { ledger ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = ledger.name,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = if (ledger.id == state.currentLedger?.id) "当前账本" else "可切换",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                            )
+                        }
+                        if (ledger.id == state.currentLedger?.id) {
+                            Text(
+                                text = "已选",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        } else {
+                            OutlinedButton(onClick = { onSelectLedger(ledger.id) }) {
+                                Text("切换")
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = state.ledgerNameText,
+                    onValueChange = onLedgerNameChange,
+                    label = { Text("新账本名称") },
+                    singleLine = true,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(onClick = onCreateLedger) {
+                    Text("新增")
+                }
+            }
         }
     }
 }

@@ -52,6 +52,7 @@ data class AccountingUiState(
     val isLoading: Boolean = true,
     val ledgers: List<Ledger> = emptyList(),
     val currentLedger: Ledger? = null,
+    val ledgerNameText: String = "",
     val currentPeriod: String = defaultCurrentPeriodText(),
     val monthlySummary: MonthlySummary? = null,
     val budgetUsage: BudgetUsage = BudgetUsage(
@@ -133,6 +134,39 @@ class AccountingViewModel(
 
     fun updateNote(value: String) {
         _uiState.update { it.copy(noteText = value, message = null) }
+    }
+
+    fun updateLedgerName(value: String) {
+        _uiState.update { it.copy(ledgerNameText = value, message = null) }
+    }
+
+    fun createLedger() {
+        viewModelScope.launch {
+            val name = _uiState.value.ledgerNameText.trim()
+            if (name.isBlank()) {
+                showMessage("请输入账本名称")
+                return@launch
+            }
+            runCatching { ledgerRepository.createLedger(name) }
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            ledgerNameText = "",
+                            message = "账本已创建",
+                        )
+                    }
+                }
+                .onFailure { showMessage(it.message ?: "账本创建失败") }
+        }
+    }
+
+    fun selectLedger(ledgerId: String) {
+        if (_uiState.value.currentLedger?.id == ledgerId) return
+        viewModelScope.launch {
+            runCatching { ledgerRepository.setDefaultLedger(ledgerId) }
+                .onSuccess { showMessage("已切换账本") }
+                .onFailure { showMessage(it.message ?: "账本切换失败") }
+        }
     }
 
     fun updateBudgetAmount(value: String) {
@@ -411,11 +445,21 @@ class AccountingViewModel(
                 .catch { showMessage("账本加载失败") }
                 .collect { ledgers ->
                     val current = ledgers.firstOrNull { it.isDefault } ?: ledgers.firstOrNull()
+                    val previousLedgerId = _uiState.value.currentLedger?.id
+                    val ledgerChanged = previousLedgerId != null && current?.id != previousLedgerId
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             ledgers = ledgers,
                             currentLedger = current,
+                            monthlySummary = if (ledgerChanged) null else it.monthlySummary,
+                            budgetUsage = if (ledgerChanged) emptyBudgetUsage() else it.budgetUsage,
+                            categoryBudgetUsages = if (ledgerChanged) emptyList() else it.categoryBudgetUsages,
+                            categoryExpenseAnalysis = if (ledgerChanged) emptyList() else it.categoryExpenseAnalysis,
+                            dailyExpenseTrend = if (ledgerChanged) emptyList() else it.dailyExpenseTrend,
+                            aiReportStatus = if (ledgerChanged) AiReportStatus.NotGenerated else it.aiReportStatus,
+                            aiReport = if (ledgerChanged) null else it.aiReport,
+                            aiErrorMessage = if (ledgerChanged) null else it.aiErrorMessage,
                         )
                     }
                     current?.let {
