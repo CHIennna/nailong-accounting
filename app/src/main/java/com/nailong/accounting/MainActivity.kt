@@ -215,6 +215,13 @@ private fun AppTabContent(
                 item { SettingsHeaderCard() }
                 item { SettingsLedgerCard(state) }
                 item {
+                    SettingsAccountCard(
+                        state = state,
+                        onAccountNameChange = viewModel::updateAccountName,
+                        onCreateAccount = viewModel::createAccount,
+                    )
+                }
+                item {
                     SettingsAiCard(
                         state = state,
                         onAiBaseUrlChange = viewModel::updateAiBaseUrl,
@@ -382,6 +389,78 @@ private fun SettingsLedgerCard(state: AccountingUiState) {
                 text = "账单、预算、账本和 AI 月报缓存当前均优先保存在本机数据库。",
                 color = MaterialTheme.colorScheme.onSurface,
             )
+        }
+    }
+}
+
+@Composable
+private fun SettingsAccountCard(
+    state: AccountingUiState,
+    onAccountNameChange: (String) -> Unit,
+    onCreateAccount: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "账户管理",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            if (state.accounts.isEmpty()) {
+                Text(
+                    text = "暂无账户，新增一个后即可用于记账。",
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                state.accounts.forEach { account ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = account.name,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = account.type,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                            )
+                        }
+                        if (account.id == state.selectedAccountId) {
+                            Text(
+                                text = "记账默认",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = state.accountNameText,
+                    onValueChange = onAccountNameChange,
+                    label = { Text("新账户名称") },
+                    singleLine = true,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(onClick = onCreateAccount) {
+                    Text("新增")
+                }
+            }
         }
     }
 }

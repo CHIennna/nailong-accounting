@@ -58,6 +58,7 @@ data class AccountingUiState(
     val ledgers: List<Ledger> = emptyList(),
     val currentLedger: Ledger? = null,
     val ledgerNameText: String = "",
+    val accountNameText: String = "",
     val currentPeriod: String = defaultCurrentPeriodText(),
     val monthlySummary: MonthlySummary? = null,
     val budgetUsage: BudgetUsage = BudgetUsage(
@@ -150,6 +151,10 @@ class AccountingViewModel(
         _uiState.update { it.copy(ledgerNameText = value, message = null) }
     }
 
+    fun updateAccountName(value: String) {
+        _uiState.update { it.copy(accountNameText = value, message = null) }
+    }
+
     fun updateAiBaseUrl(value: String) {
         _uiState.update { it.copy(aiBaseUrlText = value, message = null) }
     }
@@ -202,6 +207,27 @@ class AccountingViewModel(
             runCatching { ledgerRepository.setDefaultLedger(ledgerId) }
                 .onSuccess { showMessage("已切换账本") }
                 .onFailure { showMessage(it.message ?: "账本切换失败") }
+        }
+    }
+
+    fun createAccount() {
+        viewModelScope.launch {
+            val name = _uiState.value.accountNameText.trim()
+            if (name.isBlank()) {
+                showMessage("请输入账户名称")
+                return@launch
+            }
+            runCatching { accountRepository.createAccount(name) }
+                .onSuccess { account ->
+                    _uiState.update {
+                        it.copy(
+                            accountNameText = "",
+                            selectedAccountId = account.id,
+                            message = "账户已创建",
+                        )
+                    }
+                }
+                .onFailure { showMessage(it.message ?: "账户创建失败") }
         }
     }
 
