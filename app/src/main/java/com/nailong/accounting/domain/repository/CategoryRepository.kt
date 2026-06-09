@@ -6,4 +6,5 @@ import kotlinx.coroutines.flow.Flow
 
 interface CategoryRepository {
     fun observeCategories(type: TransactionType): Flow<List<Category>>
+    suspend fun createCategory(name: String, type: TransactionType): Category
 }

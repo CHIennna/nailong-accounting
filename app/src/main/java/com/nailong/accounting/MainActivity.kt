@@ -222,6 +222,14 @@ private fun AppTabContent(
                     )
                 }
                 item {
+                    SettingsCategoryCard(
+                        state = state,
+                        onCategoryTypeSelected = viewModel::selectManagedCategoryType,
+                        onCategoryNameChange = viewModel::updateCategoryName,
+                        onCreateCategory = viewModel::createCategory,
+                    )
+                }
+                item {
                     SettingsAiCard(
                         state = state,
                         onAiBaseUrlChange = viewModel::updateAiBaseUrl,
@@ -461,6 +469,86 @@ private fun SettingsAccountCard(
                     Text("新增")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCategoryCard(
+    state: AccountingUiState,
+    onCategoryTypeSelected: (TransactionType) -> Unit,
+    onCategoryNameChange: (String) -> Unit,
+    onCreateCategory: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "分类管理",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CategoryTypeButton(
+                    text = "支出",
+                    selected = state.managedCategoryType == TransactionType.Expense,
+                    onClick = { onCategoryTypeSelected(TransactionType.Expense) },
+                )
+                CategoryTypeButton(
+                    text = "收入",
+                    selected = state.managedCategoryType == TransactionType.Income,
+                    onClick = { onCategoryTypeSelected(TransactionType.Income) },
+                )
+            }
+            if (state.managedCategories.isEmpty()) {
+                Text(
+                    text = "暂无分类，新增一个后即可用于记账。",
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                state.managedCategories.forEach { category ->
+                    SettingInfoRow(category.name, if (category.type == TransactionType.Expense) "支出分类" else "收入分类")
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = state.categoryNameText,
+                    onValueChange = onCategoryNameChange,
+                    label = { Text("新分类名称") },
+                    singleLine = true,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(onClick = onCreateCategory) {
+                    Text("新增")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryTypeButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    if (selected) {
+        Button(onClick = onClick) {
+            Text(text)
+        }
+    } else {
+        OutlinedButton(onClick = onClick) {
+            Text(text)
         }
     }
 }

@@ -59,6 +59,9 @@ data class AccountingUiState(
     val currentLedger: Ledger? = null,
     val ledgerNameText: String = "",
     val accountNameText: String = "",
+    val categoryNameText: String = "",
+    val managedCategoryType: TransactionType = TransactionType.Expense,
+    val managedCategories: List<Category> = emptyList(),
     val currentPeriod: String = defaultCurrentPeriodText(),
     val monthlySummary: MonthlySummary? = null,
     val budgetUsage: BudgetUsage = BudgetUsage(
@@ -120,6 +123,7 @@ class AccountingViewModel(
     private var monthlyJob: Job? = null
     private var budgetJob: Job? = null
     private var expenseCategoryJob: Job? = null
+    private var managedCategoryJob: Job? = null
     private var appSettingJob: Job? = null
 
     init {
@@ -153,6 +157,23 @@ class AccountingViewModel(
 
     fun updateAccountName(value: String) {
         _uiState.update { it.copy(accountNameText = value, message = null) }
+    }
+
+    fun updateCategoryName(value: String) {
+        _uiState.update { it.copy(categoryNameText = value, message = null) }
+    }
+
+    fun selectManagedCategoryType(type: TransactionType) {
+        if (type == TransactionType.Transfer || _uiState.value.managedCategoryType == type) return
+        _uiState.update {
+            it.copy(
+                managedCategoryType = type,
+                managedCategories = emptyList(),
+                categoryNameText = "",
+                message = null,
+            )
+        }
+        observeManagedCategories(type)
     }
 
     fun updateAiBaseUrl(value: String) {
@@ -228,6 +249,29 @@ class AccountingViewModel(
                     }
                 }
                 .onFailure { showMessage(it.message ?: "账户创建失败") }
+        }
+    }
+
+    fun createCategory() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val name = state.categoryNameText.trim()
+            if (name.isBlank()) {
+                showMessage("请输入分类名称")
+                return@launch
+            }
+            runCatching { categoryRepository.createCategory(name, state.managedCategoryType) }
+                .onSuccess { category ->
+                    _uiState.update {
+                        it.copy(
+                            categoryNameText = "",
+                            selectedCategoryId = if (it.selectedType == category.type) category.id else it.selectedCategoryId,
+                            selectedBudgetCategoryId = if (category.type == TransactionType.Expense) category.id else it.selectedBudgetCategoryId,
+                            message = "分类已创建",
+                        )
+                    }
+                }
+                .onFailure { showMessage(it.message ?: "分类创建失败") }
         }
     }
 
@@ -499,6 +543,7 @@ class AccountingViewModel(
             observeAccounts()
             observeCategories(TransactionType.Expense)
             observeExpenseCategories()
+            observeManagedCategories(TransactionType.Expense)
         }
     }
 
@@ -600,6 +645,17 @@ class AccountingViewModel(
                             transactions = _uiState.value.monthlyTransactions,
                         )
                     }
+                }
+        }
+    }
+
+    private fun observeManagedCategories(type: TransactionType) {
+        managedCategoryJob?.cancel()
+        managedCategoryJob = viewModelScope.launch {
+            categoryRepository.observeCategories(type)
+                .catch { showMessage("分类管理加载失败") }
+                .collect { categories ->
+                    _uiState.update { it.copy(managedCategories = categories) }
                 }
         }
     }
