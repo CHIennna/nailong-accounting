@@ -81,6 +81,7 @@ private enum class AppTab(val label: String) {
     Record("记账"),
     Budget("预算"),
     Analysis("分析"),
+    Settings("设置"),
 }
 
 @Composable
@@ -209,6 +210,14 @@ private fun AppTabContent(
                     )
                 }
             }
+
+            AppTab.Settings -> {
+                item { SettingsHeaderCard() }
+                item { SettingsLedgerCard(state) }
+                item { SettingsAiCard() }
+                item { SettingsPrivacyCard() }
+                item { SettingsAboutCard() }
+            }
         }
     }
 }
@@ -314,6 +323,157 @@ private fun LedgerManagementCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsHeaderCard() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "设置",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = "管理账本、AI 分析、隐私与应用信息。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsLedgerCard(state: AccountingUiState) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "账本与本地数据",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            SettingInfoRow("当前账本", state.currentLedger?.name ?: "加载中")
+            SettingInfoRow("账本数量", "${state.ledgers.size} 个")
+            SettingInfoRow("账户数量", "${state.accounts.size} 个")
+            SettingInfoRow("本月账单", "${state.monthlyTransactions.size} 笔")
+            Text(
+                text = "账单、预算、账本和 AI 月报缓存当前均优先保存在本机数据库。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsAiCard() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "AI 分析",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            SettingInfoRow("调用方式", "FastAPI 后端代理")
+            SettingInfoRow("模拟器地址", "http://10.0.2.2:8000/api/v1")
+            SettingInfoRow("默认模型", "deepseek-v4-flash")
+            Text(
+                text = "正式使用前需要在后端配置 DeepSeek API Key；Android 端不会保存 API Key。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsPrivacyCard() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "隐私与安全",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            SettingInfoRow("AI 上传内容", "脱敏统计摘要")
+            SettingInfoRow("不上传内容", "单笔明细、备注、商家、账户敏感信息")
+            SettingInfoRow("发布前要求", "关闭明文网络并配置正式后端域名")
+            Text(
+                text = "当前调试环境允许访问本机 HTTP 后端，正式发布前需要切换为 HTTPS。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsAboutCard() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "关于奶龙记账",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            SettingInfoRow("版本阶段", "Android 原型编码阶段")
+            SettingInfoRow("当前里程碑", "Milestone 8 设置页")
+            SettingInfoRow("核心能力", "记账、预算、账本、消费分析、AI 月报")
+        }
+    }
+}
+
+@Composable
+private fun SettingInfoRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = label,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = value,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
