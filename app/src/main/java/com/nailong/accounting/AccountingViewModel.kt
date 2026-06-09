@@ -18,7 +18,9 @@ import com.nailong.accounting.domain.model.Transaction
 import com.nailong.accounting.domain.model.TransactionType
 import com.nailong.accounting.domain.repository.AccountRepository
 import com.nailong.accounting.domain.repository.AiAnalysisInput
+import com.nailong.accounting.domain.repository.AiAnalysisRepository
 import com.nailong.accounting.domain.repository.AiCategoryExpenseInput
+import com.nailong.accounting.domain.repository.AppSettingRepository
 import com.nailong.accounting.domain.repository.BudgetRepository
 import com.nailong.accounting.domain.repository.CategoryRepository
 import com.nailong.accounting.domain.repository.LedgerRepository
@@ -48,6 +50,9 @@ import kotlin.math.roundToLong
 private fun defaultCurrentPeriodText(): String =
     SimpleDateFormat("yyyy-MM", Locale.CHINA).format(Calendar.getInstance().time)
 
+private const val KEY_AI_BASE_URL = "ai_base_url"
+private const val DEFAULT_API_BASE_URL = "http://10.0.2.2:8000/api/v1"
+
 data class AccountingUiState(
     val isLoading: Boolean = true,
     val ledgers: List<Ledger> = emptyList(),
@@ -73,6 +78,8 @@ data class AccountingUiState(
     val aiReportStatus: AiReportStatus = AiReportStatus.NotGenerated,
     val aiReport: AiAnalysisReport? = null,
     val aiErrorMessage: String? = null,
+    val aiBaseUrl: String = DEFAULT_API_BASE_URL,
+    val aiBaseUrlText: String = DEFAULT_API_BASE_URL,
     val categories: List<Category> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val monthlyTransactions: List<Transaction> = emptyList(),
@@ -93,6 +100,8 @@ class AccountingViewModel(
     private val accountRepository: AccountRepository,
     private val budgetRepository: BudgetRepository,
     private val transactionRepository: TransactionRepository,
+    private val appSettingRepository: AppSettingRepository,
+    private val aiAnalysisRepository: AiAnalysisRepository,
     private val initializeDefaultDataUseCase: InitializeDefaultDataUseCase,
     private val addTransactionUseCase: AddTransactionUseCase,
     private val updateTransactionUseCase: UpdateTransactionUseCase,
@@ -110,6 +119,7 @@ class AccountingViewModel(
     private var monthlyJob: Job? = null
     private var budgetJob: Job? = null
     private var expenseCategoryJob: Job? = null
+    private var appSettingJob: Job? = null
 
     init {
         bootstrap()
@@ -138,6 +148,32 @@ class AccountingViewModel(
 
     fun updateLedgerName(value: String) {
         _uiState.update { it.copy(ledgerNameText = value, message = null) }
+    }
+
+    fun updateAiBaseUrl(value: String) {
+        _uiState.update { it.copy(aiBaseUrlText = value, message = null) }
+    }
+
+    fun saveAiBaseUrl() {
+        viewModelScope.launch {
+            val normalized = normalizeBaseUrl(_uiState.value.aiBaseUrlText)
+            if (normalized == null) {
+                showMessage("请输入以 http:// 或 https:// 开头的后端地址")
+                return@launch
+            }
+
+            runCatching { appSettingRepository.saveString(KEY_AI_BASE_URL, normalized) }
+                .onSuccess { showMessage("AI 后端地址已保存") }
+                .onFailure { showMessage(it.message ?: "AI 后端地址保存失败") }
+        }
+    }
+
+    fun resetAiBaseUrl() {
+        viewModelScope.launch {
+            runCatching { appSettingRepository.saveString(KEY_AI_BASE_URL, DEFAULT_API_BASE_URL) }
+                .onSuccess { showMessage("AI 后端地址已恢复默认") }
+                .onFailure { showMessage(it.message ?: "AI 后端地址恢复失败") }
+        }
     }
 
     fun createLedger() {
@@ -432,10 +468,28 @@ class AccountingViewModel(
     private fun bootstrap() {
         viewModelScope.launch {
             initializeDefaultDataUseCase()
+            observeAppSettings()
             observeLedgers()
             observeAccounts()
             observeCategories(TransactionType.Expense)
             observeExpenseCategories()
+        }
+    }
+
+    private fun observeAppSettings() {
+        appSettingJob?.cancel()
+        appSettingJob = viewModelScope.launch {
+            appSettingRepository.observeString(KEY_AI_BASE_URL, DEFAULT_API_BASE_URL)
+                .catch { showMessage("设置加载失败") }
+                .collect { baseUrl ->
+                    aiAnalysisRepository.updateBaseUrl(baseUrl)
+                    _uiState.update {
+                        it.copy(
+                            aiBaseUrl = baseUrl,
+                            aiBaseUrlText = baseUrl,
+                        )
+                    }
+                }
         }
     }
 
@@ -781,6 +835,8 @@ class AccountingViewModel(
         private val accountRepository: AccountRepository,
         private val budgetRepository: BudgetRepository,
         private val transactionRepository: TransactionRepository,
+        private val appSettingRepository: AppSettingRepository,
+        private val aiAnalysisRepository: AiAnalysisRepository,
         private val initializeDefaultDataUseCase: InitializeDefaultDataUseCase,
         private val addTransactionUseCase: AddTransactionUseCase,
         private val updateTransactionUseCase: UpdateTransactionUseCase,
@@ -798,6 +854,8 @@ class AccountingViewModel(
                 accountRepository = accountRepository,
                 budgetRepository = budgetRepository,
                 transactionRepository = transactionRepository,
+                appSettingRepository = appSettingRepository,
+                aiAnalysisRepository = aiAnalysisRepository,
                 initializeDefaultDataUseCase = initializeDefaultDataUseCase,
                 addTransactionUseCase = addTransactionUseCase,
                 updateTransactionUseCase = updateTransactionUseCase,
@@ -811,6 +869,12 @@ class AccountingViewModel(
 
     companion object {
         private const val RECENT_LIMIT = 20
+
+        private fun normalizeBaseUrl(value: String): String? {
+            val trimmed = value.trim().trimEnd('/')
+            if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
+            return trimmed.takeIf { it.length > "http://".length }
+        }
 
         private fun emptyBudgetUsage(): BudgetUsage =
             BudgetUsage(

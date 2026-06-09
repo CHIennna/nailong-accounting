@@ -10,8 +10,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class AiAnalysisRemoteDataSource(
-    private val baseUrl: String,
+    initialBaseUrl: String,
 ) {
+    @Volatile
+    private var baseUrl: String = initialBaseUrl
+
+    fun updateBaseUrl(value: String) {
+        baseUrl = value
+    }
+
     suspend fun generateReport(input: AiAnalysisInput): JSONObject =
         withContext(Dispatchers.IO) {
             val url = URL("${baseUrl.trimEnd('/')}/ai/expense-analysis")

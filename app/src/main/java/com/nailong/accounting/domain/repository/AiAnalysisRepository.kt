@@ -27,4 +27,5 @@ data class AiAnalysisInput(
 interface AiAnalysisRepository {
     suspend fun getCachedReport(ledgerId: String, period: String): AiAnalysisReport?
     suspend fun generateReport(input: AiAnalysisInput): AiAnalysisReport
+    fun updateBaseUrl(baseUrl: String)
 }

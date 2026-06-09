@@ -6,6 +6,7 @@ import com.nailong.accounting.core.database.NailongDatabase
 import com.nailong.accounting.data.remote.AiAnalysisRemoteDataSource
 import com.nailong.accounting.data.repository.DefaultAiAnalysisRepository
 import com.nailong.accounting.data.repository.DefaultAccountRepository
+import com.nailong.accounting.data.repository.DefaultAppSettingRepository
 import com.nailong.accounting.data.repository.DefaultBootstrapRepository
 import com.nailong.accounting.data.repository.DefaultBudgetRepository
 import com.nailong.accounting.data.repository.DefaultCategoryRepository
@@ -33,10 +34,12 @@ class AppContainer(context: Context) {
     private val accountRepository = DefaultAccountRepository(database.accountDao())
     private val transactionRepository = DefaultTransactionRepository(database.transactionDao())
     private val budgetRepository = DefaultBudgetRepository(database.budgetDao())
+    private val appSettingRepository = DefaultAppSettingRepository(database.appSettingDao())
+    private val aiRemoteDataSource = AiAnalysisRemoteDataSource(DEFAULT_API_BASE_URL)
     private val aiAnalysisRepository =
         DefaultAiAnalysisRepository(
             reportDao = database.aiAnalysisReportDao(),
-            remoteDataSource = AiAnalysisRemoteDataSource(DEFAULT_API_BASE_URL),
+            remoteDataSource = aiRemoteDataSource,
         )
 
     val initializeDefaultDataUseCase =
@@ -56,6 +59,8 @@ class AppContainer(context: Context) {
             accountRepository = accountRepository,
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
+            appSettingRepository = appSettingRepository,
+            aiAnalysisRepository = aiAnalysisRepository,
             initializeDefaultDataUseCase = initializeDefaultDataUseCase,
             addTransactionUseCase = AddTransactionUseCase(transactionRepository),
             updateTransactionUseCase = UpdateTransactionUseCase(transactionRepository),

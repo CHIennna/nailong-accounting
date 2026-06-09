@@ -214,7 +214,14 @@ private fun AppTabContent(
             AppTab.Settings -> {
                 item { SettingsHeaderCard() }
                 item { SettingsLedgerCard(state) }
-                item { SettingsAiCard() }
+                item {
+                    SettingsAiCard(
+                        state = state,
+                        onAiBaseUrlChange = viewModel::updateAiBaseUrl,
+                        onSaveAiBaseUrl = viewModel::saveAiBaseUrl,
+                        onResetAiBaseUrl = viewModel::resetAiBaseUrl,
+                    )
+                }
                 item { SettingsPrivacyCard() }
                 item { SettingsAboutCard() }
             }
@@ -380,7 +387,12 @@ private fun SettingsLedgerCard(state: AccountingUiState) {
 }
 
 @Composable
-private fun SettingsAiCard() {
+private fun SettingsAiCard(
+    state: AccountingUiState,
+    onAiBaseUrlChange: (String) -> Unit,
+    onSaveAiBaseUrl: () -> Unit,
+    onResetAiBaseUrl: () -> Unit,
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
@@ -396,8 +408,32 @@ private fun SettingsAiCard() {
                 fontWeight = FontWeight.Bold,
             )
             SettingInfoRow("调用方式", "FastAPI 后端代理")
-            SettingInfoRow("模拟器地址", "http://10.0.2.2:8000/api/v1")
+            SettingInfoRow("当前地址", state.aiBaseUrl)
             SettingInfoRow("默认模型", "deepseek-v4-flash")
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = state.aiBaseUrlText,
+                onValueChange = onAiBaseUrlChange,
+                label = { Text("AI 后端地址") },
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = onSaveAiBaseUrl,
+                ) {
+                    Text("保存地址")
+                }
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = onResetAiBaseUrl,
+                ) {
+                    Text("恢复默认")
+                }
+            }
             Text(
                 text = "正式使用前需要在后端配置 DeepSeek API Key；Android 端不会保存 API Key。",
                 color = MaterialTheme.colorScheme.onSurface,
@@ -450,7 +486,7 @@ private fun SettingsAboutCard() {
                 fontWeight = FontWeight.Bold,
             )
             SettingInfoRow("版本阶段", "Android 原型编码阶段")
-            SettingInfoRow("当前里程碑", "Milestone 8 设置页")
+            SettingInfoRow("当前里程碑", "Milestone 9 设置页可编辑配置")
             SettingInfoRow("核心能力", "记账、预算、账本、消费分析、AI 月报")
         }
     }

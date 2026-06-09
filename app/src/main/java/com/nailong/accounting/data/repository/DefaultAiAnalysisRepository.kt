@@ -17,6 +17,10 @@ class DefaultAiAnalysisRepository(
     override suspend fun getCachedReport(ledgerId: String, period: String): AiAnalysisReport? =
         reportDao.getLatestGenerated(ledgerId, period)?.toDomain()
 
+    override fun updateBaseUrl(baseUrl: String) {
+        remoteDataSource.updateBaseUrl(baseUrl)
+    }
+
     override suspend fun generateReport(input: AiAnalysisInput): AiAnalysisReport {
         val response = remoteDataSource.generateReport(input)
         val reportJson = response.getJSONObject("report")
