@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,8 +23,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -44,12 +47,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.AiAnalysisReport
 import com.nailong.accounting.domain.model.AiReportStatus
-import com.nailong.accounting.domain.model.Account
 import com.nailong.accounting.domain.model.BudgetStatus
-import com.nailong.accounting.domain.model.CategoryBudgetUsage
 import com.nailong.accounting.domain.model.Category
+import com.nailong.accounting.domain.model.CategoryBudgetUsage
 import com.nailong.accounting.domain.model.CategoryExpenseAnalysis
 import com.nailong.accounting.domain.model.DailyExpensePoint
 import com.nailong.accounting.domain.model.Transaction
@@ -73,10 +76,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class AppTab(val label: String) {
+    Home("首页"),
+    Record("记账"),
+    Budget("预算"),
+    Analysis("分析"),
+}
+
 @Composable
 private fun NailongApp(viewModel: AccountingViewModel) {
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var selectedTab by remember { mutableStateOf(AppTab.Home) }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -86,6 +97,18 @@ private fun NailongApp(viewModel: AccountingViewModel) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            NavigationBar {
+                AppTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        label = { Text(tab.label) },
+                        icon = { Text(tab.label.first().toString()) },
+                    )
+                }
+            }
+        },
     ) { padding ->
         Surface(
             modifier = Modifier
@@ -93,38 +116,41 @@ private fun NailongApp(viewModel: AccountingViewModel) {
                 .padding(padding),
             color = MaterialTheme.colorScheme.background,
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
+            AppTabContent(
+                tab = selectedTab,
+                state = state,
+                viewModel = viewModel,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppTabContent(
+    tab: AppTab,
+    state: AccountingUiState,
+    viewModel: AccountingViewModel,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        when (tab) {
+            AppTab.Home -> {
+                item { HeaderCard(state) }
                 item {
-                    HeaderCard(state)
-                }
-                item {
-                    MonthlySummaryCard(
+                    HomeOverviewCard(
                         state = state,
-                        onBudgetAmountChange = viewModel::updateBudgetAmount,
-                        onSaveBudget = viewModel::saveMonthlyBudget,
                         onPreviousMonth = { viewModel.movePeriod(-1) },
                         onNextMonth = { viewModel.movePeriod(1) },
                         onCurrentMonth = viewModel::goToCurrentPeriod,
-                        onCategoryBudgetAmountChange = viewModel::updateCategoryBudgetAmount,
-                        onBudgetCategorySelected = viewModel::selectBudgetCategory,
-                        onSaveCategoryBudget = viewModel::saveCategoryBudget,
                     )
                 }
-                item {
-                    ExpenseAnalysisCard(state)
-                }
-                item {
-                    AiReportCard(
-                        state = state,
-                        onGenerate = { viewModel.generateAiReport(forceRefresh = false) },
-                        onRegenerate = { viewModel.generateAiReport(forceRefresh = true) },
-                    )
-                }
+                recentTransactionsSection(state, viewModel)
+            }
+
+            AppTab.Record -> {
                 item {
                     TransactionForm(
                         state = state,
@@ -138,30 +164,70 @@ private fun NailongApp(viewModel: AccountingViewModel) {
                         onCancelEdit = viewModel::cancelEdit,
                     )
                 }
+                recentTransactionsSection(state, viewModel)
+            }
+
+            AppTab.Budget -> {
                 item {
-                    Text(
-                        text = "最近账单",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
+                    BudgetManagementCard(
+                        state = state,
+                        onBudgetAmountChange = viewModel::updateBudgetAmount,
+                        onSaveBudget = viewModel::saveMonthlyBudget,
+                        onPreviousMonth = { viewModel.movePeriod(-1) },
+                        onNextMonth = { viewModel.movePeriod(1) },
+                        onCurrentMonth = viewModel::goToCurrentPeriod,
+                        onCategoryBudgetAmountChange = viewModel::updateCategoryBudgetAmount,
+                        onBudgetCategorySelected = viewModel::selectBudgetCategory,
+                        onSaveCategoryBudget = viewModel::saveCategoryBudget,
                     )
                 }
-                if (state.recentTransactions.isEmpty()) {
-                    item {
-                        EmptyTransactionsCard()
-                    }
-                } else {
-                    items(state.recentTransactions, key = { it.id }) { transaction ->
-                        TransactionRow(
-                            transaction = transaction,
-                            categories = state.categories,
-                            accounts = state.accounts,
-                            onEdit = { viewModel.editTransaction(transaction) },
-                            onDelete = { viewModel.deleteTransaction(transaction.id) },
-                        )
-                    }
+            }
+
+            AppTab.Analysis -> {
+                item {
+                    PeriodSwitchCard(
+                        period = state.currentPeriod,
+                        onPreviousMonth = { viewModel.movePeriod(-1) },
+                        onNextMonth = { viewModel.movePeriod(1) },
+                        onCurrentMonth = viewModel::goToCurrentPeriod,
+                    )
+                }
+                item { ExpenseAnalysisCard(state) }
+                item {
+                    AiReportCard(
+                        state = state,
+                        onGenerate = { viewModel.generateAiReport(forceRefresh = false) },
+                        onRegenerate = { viewModel.generateAiReport(forceRefresh = true) },
+                    )
                 }
             }
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.recentTransactionsSection(
+    state: AccountingUiState,
+    viewModel: AccountingViewModel,
+) {
+    item {
+        Text(
+            text = "最近账单",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+    }
+    if (state.recentTransactions.isEmpty()) {
+        item { EmptyTransactionsCard() }
+    } else {
+        items(state.recentTransactions, key = { it.id }) { transaction ->
+            TransactionRow(
+                transaction = transaction,
+                categories = state.categories + state.expenseCategories,
+                accounts = state.accounts,
+                onEdit = { viewModel.editTransaction(transaction) },
+                onDelete = { viewModel.deleteTransaction(transaction.id) },
+            )
         }
     }
 }
@@ -189,9 +255,126 @@ private fun HeaderCard(state: AccountingUiState) {
             )
             Text(
                 modifier = Modifier.padding(top = 4.dp),
-                text = "Milestone 3：首页统计与预算",
+                text = "本地记账、预算控制、消费分析和 AI 月报已接入基础闭环。",
                 color = MaterialTheme.colorScheme.onSurface,
             )
+        }
+    }
+}
+
+@Composable
+private fun HomeOverviewCard(
+    state: AccountingUiState,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
+) {
+    val summary = state.monthlySummary
+    val budgetUsage = state.budgetUsage
+    val progress = ((budgetUsage.usageRate ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PeriodControls(
+                period = state.currentPeriod,
+                title = "月度概览",
+                onPreviousMonth = onPreviousMonth,
+                onNextMonth = onNextMonth,
+                onCurrentMonth = onCurrentMonth,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SummaryMetric("支出", formatCents(summary?.expenseInCents ?: 0), Modifier.weight(1f))
+                SummaryMetric("收入", formatCents(summary?.incomeInCents ?: 0), Modifier.weight(1f))
+                SummaryMetric("结余", formatCents(summary?.balanceInCents ?: 0), Modifier.weight(1f))
+            }
+            Text(
+                text = budgetStatusText(budgetUsage.status),
+                fontWeight = FontWeight.Bold,
+            )
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                progress = { progress },
+            )
+            Text(
+                text = "预算：${budgetUsage.budgetAmountInCents?.let(::formatCents) ?: "未设置"} · " +
+                    "已用：${formatCents(budgetUsage.usedAmountInCents)} · " +
+                    "剩余：${budgetUsage.remainingAmountInCents?.let(::formatCents) ?: "--"}",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PeriodSwitchCard(
+    period: String,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+        ) {
+            PeriodControls(
+                period = period,
+                title = "分析月份",
+                onPreviousMonth = onPreviousMonth,
+                onNextMonth = onNextMonth,
+                onCurrentMonth = onCurrentMonth,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PeriodControls(
+    period: String,
+    title: String,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                modifier = Modifier.padding(top = 4.dp),
+                text = period,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        OutlinedButton(onClick = onPreviousMonth) {
+            Text("<")
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        OutlinedButton(onClick = onCurrentMonth) {
+            Text("本月")
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        OutlinedButton(onClick = onNextMonth) {
+            Text(">")
         }
     }
 }
@@ -439,7 +622,7 @@ private fun AnalysisBar(
 }
 
 @Composable
-private fun MonthlySummaryCard(
+private fun BudgetManagementCard(
     state: AccountingUiState,
     onBudgetAmountChange: (String) -> Unit,
     onSaveBudget: () -> Unit,
@@ -463,47 +646,20 @@ private fun MonthlySummaryCard(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    modifier = Modifier.weight(1f),
-                    text = "${state.currentPeriod} 月度概览",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                OutlinedButton(onClick = onPreviousMonth) {
-                    Text("上月")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                OutlinedButton(onClick = onCurrentMonth) {
-                    Text("本月")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                OutlinedButton(onClick = onNextMonth) {
-                    Text("下月")
-                }
-            }
+            PeriodControls(
+                period = state.currentPeriod,
+                title = "预算管理",
+                onPreviousMonth = onPreviousMonth,
+                onNextMonth = onNextMonth,
+                onCurrentMonth = onCurrentMonth,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                SummaryMetric(
-                    label = "支出",
-                    value = formatCents(summary?.expenseInCents ?: 0),
-                    modifier = Modifier.weight(1f),
-                )
-                SummaryMetric(
-                    label = "收入",
-                    value = formatCents(summary?.incomeInCents ?: 0),
-                    modifier = Modifier.weight(1f),
-                )
-                SummaryMetric(
-                    label = "结余",
-                    value = formatCents(summary?.balanceInCents ?: 0),
-                    modifier = Modifier.weight(1f),
-                )
+                SummaryMetric("支出", formatCents(summary?.expenseInCents ?: 0), Modifier.weight(1f))
+                SummaryMetric("收入", formatCents(summary?.incomeInCents ?: 0), Modifier.weight(1f))
+                SummaryMetric("结余", formatCents(summary?.balanceInCents ?: 0), Modifier.weight(1f))
             }
             Text(
                 text = budgetStatusText(budgetUsage.status),
@@ -532,7 +688,7 @@ private fun MonthlySummaryCard(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(onClick = onSaveBudget) {
-                    Text("保存预算")
+                    Text("保存")
                 }
             }
             CategoryBudgetSection(
@@ -576,7 +732,7 @@ private fun CategoryBudgetSection(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Button(onClick = onSaveCategoryBudget) {
-                Text("保存分类预算")
+                Text("保存")
             }
         }
         if (state.categoryBudgetUsages.isEmpty()) {
@@ -713,7 +869,7 @@ private fun TransactionForm(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onSave,
             ) {
-                Text(if (state.editingTransactionId == null) "保存" else "保存修改")
+                Text(if (state.editingTransactionId == null) "保存账单" else "保存修改")
             }
             if (state.editingTransactionId != null) {
                 OutlinedButton(
@@ -916,15 +1072,15 @@ private fun formatAmount(transaction: Transaction): String {
 }
 
 private fun formatCents(cents: Long): String =
-    "¥${"%.2f".format(cents / 100.0)}"
+    "￥${"%.2f".format(cents / 100.0)}"
 
 private fun formatDate(timestamp: Long): String =
     SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(timestamp))
 
 private fun budgetStatusText(status: BudgetStatus): String =
     when (status) {
-        BudgetStatus.NotSet -> "未设置"
-        BudgetStatus.Normal -> "正常"
+        BudgetStatus.NotSet -> "未设置预算"
+        BudgetStatus.Normal -> "预算正常"
         BudgetStatus.Warning -> "接近超支"
         BudgetStatus.Exceeded -> "已超支"
     }
