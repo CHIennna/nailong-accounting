@@ -22,6 +22,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
@@ -98,6 +99,15 @@ private fun NailongApp(viewModel: AccountingViewModel) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { selectedTab = AppTab.Record }) {
+                Text(
+                    text = "✎",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
         bottomBar = {
             NavigationBar {
                 AppTab.entries.forEach { tab ->
@@ -121,6 +131,7 @@ private fun NailongApp(viewModel: AccountingViewModel) {
                 tab = selectedTab,
                 state = state,
                 viewModel = viewModel,
+                onOpenRecord = { selectedTab = AppTab.Record },
             )
         }
     }
@@ -131,6 +142,7 @@ private fun AppTabContent(
     tab: AppTab,
     state: AccountingUiState,
     viewModel: AccountingViewModel,
+    onOpenRecord: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -141,11 +153,9 @@ private fun AppTabContent(
             AppTab.Home -> {
                 item { HeaderCard(state) }
                 item {
-                    LedgerManagementCard(
+                    QuickRecordEntryCard(
                         state = state,
-                        onLedgerNameChange = viewModel::updateLedgerName,
-                        onCreateLedger = viewModel::createLedger,
-                        onSelectLedger = viewModel::selectLedger,
+                        onOpenRecord = onOpenRecord,
                     )
                 }
                 item {
@@ -156,7 +166,22 @@ private fun AppTabContent(
                         onCurrentMonth = viewModel::goToCurrentPeriod,
                     )
                 }
-                recentTransactionsSection(state, viewModel)
+                item {
+                    LedgerManagementCard(
+                        state = state,
+                        onLedgerNameChange = viewModel::updateLedgerName,
+                        onCreateLedger = viewModel::createLedger,
+                        onSelectLedger = viewModel::selectLedger,
+                    )
+                }
+                recentTransactionsSection(
+                    state = state,
+                    onEdit = { transaction ->
+                        viewModel.editTransaction(transaction)
+                        onOpenRecord()
+                    },
+                    onDelete = { transactionId -> viewModel.deleteTransaction(transactionId) },
+                )
             }
 
             AppTab.Record -> {
@@ -173,7 +198,11 @@ private fun AppTabContent(
                         onCancelEdit = viewModel::cancelEdit,
                     )
                 }
-                recentTransactionsSection(state, viewModel)
+                recentTransactionsSection(
+                    state = state,
+                    onEdit = { transaction -> viewModel.editTransaction(transaction) },
+                    onDelete = { transactionId -> viewModel.deleteTransaction(transactionId) },
+                )
             }
 
             AppTab.Budget -> {
@@ -246,7 +275,8 @@ private fun AppTabContent(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.recentTransactionsSection(
     state: AccountingUiState,
-    viewModel: AccountingViewModel,
+    onEdit: (Transaction) -> Unit,
+    onDelete: (String) -> Unit,
 ) {
     item {
         Text(
@@ -264,9 +294,58 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTransactionsSec
                 transaction = transaction,
                 categories = state.categories + state.expenseCategories,
                 accounts = state.accounts,
-                onEdit = { viewModel.editTransaction(transaction) },
-                onDelete = { viewModel.deleteTransaction(transaction.id) },
+                onEdit = { onEdit(transaction) },
+                onDelete = { onDelete(transaction.id) },
             )
+        }
+    }
+}
+
+@Composable
+private fun QuickRecordEntryCard(
+    state: AccountingUiState,
+    onOpenRecord: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "快速记一笔",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = "选择分类、支付方式、金额，三步完成日常记账。",
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SummaryMetric(
+                    label = "当前账本",
+                    value = state.currentLedger?.name ?: "加载中",
+                    modifier = Modifier.weight(1f),
+                )
+                SummaryMetric(
+                    label = "默认账户",
+                    value = state.accounts.firstOrNull { it.id == state.selectedAccountId }?.name ?: "未选择",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenRecord,
+            ) {
+                Text("开始记账")
+            }
         }
     }
 }
@@ -1271,19 +1350,16 @@ private fun TransactionForm(
         ) {
             Text(
                 text = if (state.editingTransactionId == null) "记一笔" else "编辑账单",
-                fontSize = 20.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "先选分类和支付方式，再输入金额。",
+                color = MaterialTheme.colorScheme.onSurface,
             )
             TypeSelector(
                 selectedType = state.selectedType,
                 onTypeSelected = onTypeSelected,
-            )
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = state.amountText,
-                onValueChange = onAmountChange,
-                label = { Text("金额") },
-                singleLine = true,
             )
             if (state.selectedType != TransactionType.Transfer) {
                 CategoryDropdown(
@@ -1293,7 +1369,11 @@ private fun TransactionForm(
                 )
             }
             AccountDropdown(
-                label = if (state.selectedType == TransactionType.Transfer) "转出账户" else "账户",
+                label = when (state.selectedType) {
+                    TransactionType.Expense -> "支付方式"
+                    TransactionType.Income -> "收款方式"
+                    TransactionType.Transfer -> "转出账户"
+                },
                 accounts = state.accounts,
                 selectedAccountId = state.selectedAccountId,
                 onSelected = onAccountSelected,
@@ -1306,6 +1386,13 @@ private fun TransactionForm(
                     onSelected = onTargetAccountSelected,
                 )
             }
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = state.amountText,
+                onValueChange = onAmountChange,
+                label = { Text("金额") },
+                singleLine = true,
+            )
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = state.noteText,
