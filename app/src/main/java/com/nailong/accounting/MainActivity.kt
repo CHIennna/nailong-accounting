@@ -1362,13 +1362,13 @@ private fun TransactionForm(
                 onTypeSelected = onTypeSelected,
             )
             if (state.selectedType != TransactionType.Transfer) {
-                CategoryDropdown(
+                QuickCategorySelector(
                     categories = state.categories,
                     selectedCategoryId = state.selectedCategoryId,
                     onSelected = onCategorySelected,
                 )
             }
-            AccountDropdown(
+            QuickAccountSelector(
                 label = when (state.selectedType) {
                     TransactionType.Expense -> "支付方式"
                     TransactionType.Income -> "收款方式"
@@ -1379,7 +1379,7 @@ private fun TransactionForm(
                 onSelected = onAccountSelected,
             )
             if (state.selectedType == TransactionType.Transfer) {
-                AccountDropdown(
+                QuickAccountSelector(
                     label = "转入账户",
                     accounts = state.accounts,
                     selectedAccountId = state.selectedTargetAccountId,
@@ -1390,7 +1390,7 @@ private fun TransactionForm(
                 modifier = Modifier.fillMaxWidth(),
                 value = state.amountText,
                 onValueChange = onAmountChange,
-                label = { Text("金额") },
+                label = { Text("输入金额") },
                 singleLine = true,
             )
             OutlinedTextField(
@@ -1414,6 +1414,120 @@ private fun TransactionForm(
                     Text("取消编辑")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuickCategorySelector(
+    categories: List<Category>,
+    selectedCategoryId: String?,
+    onSelected: (String?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "选择分类",
+            fontWeight = FontWeight.Bold,
+        )
+        if (categories.isEmpty()) {
+            Text(
+                text = "暂无分类，可以先到设置页新增。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            categories.take(9).chunked(3).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowItems.forEach { category ->
+                        SelectablePillButton(
+                            text = category.name,
+                            selected = category.id == selectedCategoryId,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelected(category.id) },
+                        )
+                    }
+                    repeat(3 - rowItems.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        CategoryDropdown(
+            categories = categories,
+            selectedCategoryId = selectedCategoryId,
+            onSelected = onSelected,
+        )
+    }
+}
+
+@Composable
+private fun QuickAccountSelector(
+    label: String,
+    accounts: List<Account>,
+    selectedAccountId: String?,
+    onSelected: (String?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = label,
+            fontWeight = FontWeight.Bold,
+        )
+        if (accounts.isEmpty()) {
+            Text(
+                text = "暂无账户，可以先到设置页新增。",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            accounts.take(6).chunked(3).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowItems.forEach { account ->
+                        SelectablePillButton(
+                            text = account.name,
+                            selected = account.id == selectedAccountId,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelected(account.id) },
+                        )
+                    }
+                    repeat(3 - rowItems.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        AccountDropdown(
+            label = label,
+            accounts = accounts,
+            selectedAccountId = selectedAccountId,
+            onSelected = onSelected,
+        )
+    }
+}
+
+@Composable
+private fun SelectablePillButton(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    if (selected) {
+        Button(
+            modifier = modifier,
+            onClick = onClick,
+        ) {
+            Text(text)
+        }
+    } else {
+        OutlinedButton(
+            modifier = modifier,
+            onClick = onClick,
+        ) {
+            Text(text)
         }
     }
 }
